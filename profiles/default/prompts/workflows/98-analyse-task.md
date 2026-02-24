@@ -229,7 +229,7 @@ Extract ONLY the product context needed for this task.
   "product_context": {
     "mission_summary": "Personal productivity app for managing time and tasks",
     "entity_definitions": "CalendarEvent: Represents a scheduled event with start/end time, title, and optional recurrence",
-    "tech_stack_relevant": ".NET 8, EF Core 8, SQLite"
+    "tech_stack_relevant": ".NET 10, EF Core 10, SQLite"
   }
 }
 ```
