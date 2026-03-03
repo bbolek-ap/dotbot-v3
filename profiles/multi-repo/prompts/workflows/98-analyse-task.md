@@ -112,6 +112,11 @@ Extract from `jira-context.md`:
 
 These values will be substituted into the research methodology prompt.
 
+> **Path reference** — Initiative context is in `briefing/` but research outputs are one level up:
+> - Initiative context: `.bot/workspace/product/briefing/jira-context.md`
+> - Research outputs: `.bot/workspace/product/research-documents.md`, `research-internet.md`, `research-repos.md`
+> - Deep dive outputs: `.bot/workspace/product/research-repo-{RepoName}-summary.md`
+
 ### Research Phase 3: Load Research Methodology
 
 Load the research prompt specified in the task's `research_prompt` field:
@@ -130,9 +135,9 @@ The research prompt is a **methodology document** — it defines:
 
 If this task has dependencies, the dependent research outputs should already exist. Load them for context:
 
-- `research-documents.md` — from Atlassian research
-- `research-internet.md` — from public research
-- `research-repos.md` — from repo scan
+- `.bot/workspace/product/research-documents.md` — from Atlassian research
+- `.bot/workspace/product/research-internet.md` — from public research
+- `.bot/workspace/product/research-repos.md` — from repo scan
 
 Only load what exists and is relevant to this task's methodology.
 
@@ -165,7 +170,7 @@ mcp__dotbot__task_mark_analysed({
       ado_org_url: "<from jira-context.md or .env.local>"
     },
     prior_research: [
-      "<list of prior research files that exist and are relevant>"
+      "<full relative paths, e.g. .bot/workspace/product/research-documents.md>"
     ],
     working_dir: "<from task, or null>",
     external_repo: "<from task, or null>",
