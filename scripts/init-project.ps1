@@ -787,6 +787,106 @@ if ($resolvedOrder.Count -gt 0) {
         Write-Host "    stacks:   $($installedStacks -join ', ')" -ForegroundColor Cyan
     }
 }
+
+# ---------------------------------------------------------------------------
+# Show profile-specific dependency checks (from kickstart.preflight)
+# ---------------------------------------------------------------------------
+$settingsDefaultPath = Join-Path $BotDir "defaults\settings.default.json"
+if (Test-Path $settingsDefaultPath) {
+    try {
+        $finalSettings = Get-Content $settingsDefaultPath -Raw | ConvertFrom-Json
+        $preflightChecks = @()
+        if ($finalSettings.kickstart -and $finalSettings.kickstart.preflight) {
+            $preflightChecks = @($finalSettings.kickstart.preflight)
+        }
+    } catch {
+        $preflightChecks = @()
+    }
+
+    if ($preflightChecks.Count -gt 0) {
+        Write-Host ""
+        Write-Host "  PROFILE DEPENDENCIES" -ForegroundColor Blue
+        Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+        Write-Host ""
+
+        $mcpListCache = $null
+        $envLocalPath = Join-Path $ProjectDir ".env.local"
+        $depWarningCount = 0
+
+        foreach ($check in $preflightChecks) {
+            $label = if ($check.message) { $check.message } else { $check.name }
+            $hint  = $check.hint
+            $passed = $false
+
+            switch ($check.type) {
+                'env_var' {
+                    $varName = if ($check.var) { $check.var } else { $check.name }
+                    $envValue = $null
+                    if (Test-Path $envLocalPath) {
+                        $envLines = Get-Content $envLocalPath -ErrorAction SilentlyContinue
+                        foreach ($line in $envLines) {
+                            if ($line -match "^\s*$([regex]::Escape($varName))\s*=\s*(.+)$") {
+                                $envValue = $matches[1].Trim()
+                            }
+                        }
+                    }
+                    $passed = [bool]$envValue
+                    if (-not $hint -and -not $passed) {
+                        $hint = "Set $varName in .env.local"
+                    }
+                }
+                'mcp_server' {
+                    $mcpFound = $false
+                    if (Test-Path $mcpJsonPath) {
+                        try {
+                            $mcpData = Get-Content $mcpJsonPath -Raw | ConvertFrom-Json
+                            if ($mcpData.mcpServers -and $mcpData.mcpServers.PSObject.Properties.Name -contains $check.name) {
+                                $mcpFound = $true
+                            }
+                        } catch {}
+                    }
+                    if (-not $mcpFound) {
+                        if ($null -eq $mcpListCache) {
+                            try { $mcpListCache = & claude mcp list 2>&1 | Out-String }
+                            catch { $mcpListCache = "" }
+                        }
+                        if ($mcpListCache -match "(?m)^$([regex]::Escape($check.name)):") {
+                            $mcpFound = $true
+                        }
+                    }
+                    $passed = $mcpFound
+                    if (-not $hint -and -not $passed) {
+                        $hint = "Register '$($check.name)' server in .mcp.json or via 'claude mcp add'"
+                    }
+                }
+                'cli_tool' {
+                    $passed = $null -ne (Get-Command $check.name -ErrorAction SilentlyContinue)
+                    if (-not $hint -and -not $passed) {
+                        $hint = "Install '$($check.name)' and ensure it is on PATH"
+                    }
+                }
+            }
+
+            if ($passed) {
+                Write-Success $label
+            } else {
+                Write-DotbotWarning $label
+                if ($hint) {
+                    Write-Host "    $hint" -ForegroundColor DarkGray
+                }
+                $depWarningCount++
+            }
+        }
+
+        if ($depWarningCount -gt 0) {
+            Write-Host ""
+            Write-Host "  .env.local is a project-level file (in the same folder as .bot/) for" -ForegroundColor DarkGray
+            Write-Host "  secrets and credentials. It is gitignored. Create it and add the missing" -ForegroundColor DarkGray
+            Write-Host "  variables as KEY=value pairs, one per line." -ForegroundColor DarkGray
+        }
+    }
+}
+
 Write-Host ""
 Write-Host "  GET STARTED" -ForegroundColor Blue
 Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
