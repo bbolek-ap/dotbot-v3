@@ -2,7 +2,7 @@
 
 > **Purpose**: Post-implementation record of what was actually built, modified, and remaining.
 > **Repo**: {RepoName}
-> **Initiative**: (read from `initiative.md`)
+> **Initiative**: (read from `jira-context.md`)
 > **Date**: (current date)
 > **Plan**: `{RepoName}_Plan.md`
 

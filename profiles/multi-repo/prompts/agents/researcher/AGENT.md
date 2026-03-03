@@ -44,7 +44,7 @@ You work on tasks with `category: "research"`:
 
 ## Constraints
 
-- **Read initiative.md first** — All research is scoped by the initiative context
+- **Read jira-context.md first** — All research is scoped by the initiative context
 - **Follow the methodology** — The research prompt defines what to investigate and how
 - **Write to briefing/** — All output goes to `.bot/workspace/product/briefing/`
 - **No code changes** — Research agents produce documents, not code

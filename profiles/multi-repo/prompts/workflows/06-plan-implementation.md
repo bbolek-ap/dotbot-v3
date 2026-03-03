@@ -12,7 +12,7 @@ Creates detailed, code-level implementation plans for each affected repository. 
 
 - `04_IMPLEMENTATION_RESEARCH.md` must exist (implementation research synthesis)
 - Deep dive reports must exist for all target repos
-- `initiative.md` must exist
+- `jira-context.md` must exist
 
 ## Your Task
 
@@ -20,7 +20,7 @@ Creates detailed, code-level implementation plans for each affected repository. 
 
 ```
 read_files({ files: [
-  { path: ".bot/workspace/product/briefing/initiative.md" },
+  { path: ".bot/workspace/product/briefing/jira-context.md" },
   { path: ".bot/workspace/product/briefing/04_IMPLEMENTATION_RESEARCH.md" }
 ]})
 ```
@@ -33,7 +33,7 @@ read_files({ files: [{ path: ".bot/prompts/implementation/plan.md" }] })
 
 ### Step 3: Identify Target Repos
 
-Read `02_REPOS_AFFECTED.md` and the implementation research to determine which repos need implementation plans. Typically these are the MEDIUM+ impact repos that had deep dives.
+Read `research-repos.md` and the implementation research to determine which repos need implementation plans. Typically these are the MEDIUM+ impact repos that had deep dives.
 
 ### Step 4: Create Per-Repo Plans
 

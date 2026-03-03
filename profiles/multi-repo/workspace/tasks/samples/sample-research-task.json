@@ -8,14 +8,14 @@
   "status": "todo",
   "dependencies": [],
   "acceptance_criteria": [
-    "00_CURRENT_STATUS.md written to .bot/workspace/product/briefing/",
+    "research-documents.md written to .bot/workspace/product/briefing/",
     "All Jira tickets related to the initiative are catalogued",
     "Confluence documentation gaps identified",
     "Cross-source contradictions flagged",
     "Similar/predecessor projects analysed"
   ],
   "steps": [
-    "Read initiative.md for Jira key and context",
+    "Read jira-context.md for Jira key and context",
     "Scan Jira for all related tickets",
     "Scan Confluence for related pages",
     "Cross-reference Jira status vs Confluence documentation",

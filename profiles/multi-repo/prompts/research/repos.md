@@ -1,12 +1,20 @@
-# Research Methodology: Repository Impact Scan
+# Research Methodology: Deep Sourcebot Research
 
-## Objective: Generate `02_REPOS_AFFECTED.md`
+## Objective: Generate `research-repos.md`
 
-You are a Research AI Agent with access to source code search tools (Sourcebot MCP server, Azure DevOps, or equivalent code search capabilities across the organisation's repository estate).
+You are a Research AI Agent with access to Sourcebot MCP tools for searching code across the organisation's repository estate.
 
-Your task is to identify all repositories that would likely be affected by the initiative and produce a structured impact assessment saved as:
+The following tools were loaded in Phase 0 and are ready to use:
+- `mcp__sourcebot__search_code` — search code across all indexed repositories
+- `mcp__sourcebot__list_repos` — list available repositories
+- `mcp__sourcebot__read_file` — read specific files from repositories
+- `mcp__sourcebot__list_tree` — browse repository directory trees
 
-`.bot/workspace/product/briefing/02_REPOS_AFFECTED.md`
+Dotbot task management tools were also loaded in Phase 0. Do not call ToolSearch during research.
+
+Your task is to discover all repositories relevant to the initiative using Sourcebot code search, classify them by relevance and impact, and produce a structured assessment saved as:
+
+`.bot/workspace/product/research-repos.md`
 
 This document must be based on evidence found in actual source code, database scripts, configuration files, and test suites — not assumptions about what might exist.
 
@@ -14,7 +22,7 @@ You are strictly prohibited from using emojis in the report.
 
 ## Initiative Context
 
-Read `.bot/workspace/product/briefing/initiative.md` for all initiative context including:
+Read `.bot/workspace/product/briefing/jira-context.md` for all initiative context including:
 - **Jira Key** — use for searching code comments, ticket references
 - **Initiative Name** — use as search term
 - **Business Objective** — understand what functionality to search for
@@ -23,8 +31,8 @@ Read `.bot/workspace/product/briefing/initiative.md` for all initiative context 
 - **Organisation Settings** — ADO org URL and default projects for scoping searches
 
 Also read prior research if available:
-- `.bot/workspace/product/briefing/00_CURRENT_STATUS.md` — current state context
-- `.bot/workspace/product/briefing/01_INTERNET_RESEARCH.md` — domain context
+- `.bot/workspace/product/research-documents.md` — current state context
+- `.bot/workspace/product/research-internet.md` — domain context
 
 ---
 
@@ -32,28 +40,87 @@ Also read prior research if available:
 
 ## 1. Establish Search Terms
 
-Before scanning repositories, derive a comprehensive set of search terms from:
+Before scanning repositories, derive search terms from the initiative context and organize them by specificity. **Specific terms first, broad terms last.**
 
-- The initiative's domain (e.g., feature names, domain concepts, compliance terms)
-- Known system entities (country names, country codes, feature flags, table names, enum values)
-- Patterns from analogous implementations already in the codebase (e.g., if a reference implementation exists, search for its patterns to find where a parallel implementation would be needed)
-- Jira ticket keys or initiative identifiers
-- Known third-party provider names
+### Priority Hierarchy
 
-Cast a wide net initially, then narrow based on relevance.
+**P1 — Exact Identifiers** (search these first, zero ambiguity)
+- Jira ticket keys (e.g., `PROJ-1234`)
+- Epic or initiative identifiers from the briefing
+- Known feature flag names or configuration keys
+
+**P2 — Domain-Specific Names** (high signal, low noise)
+- Third-party provider names (e.g., "Edicom", "FBR", "Avalara")
+- Domain-specific technical terms (e.g., "EInvoice", "ClearanceTax", "SII")
+- Named system components, service names, or API endpoint paths from the briefing
+
+**P3 — Reference Implementation Patterns** (find where parallel changes are needed)
+- File and class name patterns from the analogous implementation (e.g., if the reference is "Spain", search for `Spain`, `ES_`, `SpainProvider`)
+- Stored procedure naming patterns (e.g., `usp_*Spain*`)
+- Configuration section names from the reference implementation
+
+**P4 — Scoped Entity Identifiers** (use codes, not names)
+- Country/region CODES: `PK`, `SA`, `MY` — short, specific, fewer false positives
+- Enum values and lookup codes from the domain
+- ISO standard codes relevant to the initiative
+
+**P5 — Broad Terms** (use only to fill gaps, expect noise)
+- Full country or region names (e.g., "Pakistan", "Saudi Arabia")
+- Generic domain words (e.g., "invoice", "tax", "compliance")
+- Use these ONLY if P1-P4 searches have not yet surfaced a repository you have reason to believe exists
+
+### When NOT to Search
+
+- **Skip P5 terms entirely** if P1-P4 already found all repositories mentioned in prior research or the initiative briefing
+- **Do not search generic infrastructure terms** (e.g., "logging", "authentication") unless the briefing specifically identifies infrastructure changes
+- **Do not repeat a search** with a broader term if a narrower term already found the same repository
+
+### Handling Broad Results
+
+If a search term returns excessive matches (100+ results):
+1. **Do not save the raw results to a file** — process them in the current turn
+2. **Combine the broad term with a narrower qualifier** (e.g., search `Pakistan AND provider` instead of `Pakistan`)
+3. **Filter by file path or repository** if Sourcebot supports it
+4. **Skip the term** if the repositories it matches are already covered by earlier, more specific searches
 
 ---
 
 ## 2. Repository Discovery
 
-Scan all accessible repositories using code search. For each search term:
+Use `list_repos` to understand the full repository landscape before searching.
 
-- Record which repositories contain matches
-- Note the number and type of matches (code, config, SQL, test, docs)
-- Identify whether matches are in active code or archived/deprecated paths
-- Distinguish between direct references (the feature itself) and indirect references (shared infrastructure that the feature uses)
+### Search Execution Protocol
 
-Use `list_repos` or equivalent to understand the full repository landscape before searching.
+For each search term (working through the priority hierarchy above):
+
+1. **Execute the search** using `mcp__sourcebot__search_code`
+2. **Process results immediately in the same turn** — do not save raw output to files for later parsing
+3. **Classify each match inline** as you read it:
+   - **Direct**: the feature itself (provider logic, entity-specific code, domain rules)
+   - **Indirect**: shared infrastructure the feature uses (enums, lookups, shared contracts)
+   - **Noise**: irrelevant matches (localization files, UI dropdowns, unrelated comments) — discard immediately
+4. **Record findings per repository** using the checklist below
+5. **Move to the next search term** — do not spawn sub-agents to process search results
+
+### What to Record Per Repository
+
+For each repository that appears in search results with relevant (non-noise) matches:
+
+- Repository name and ADO project
+- Which search terms matched and approximate count of relevant matches
+- Match categories: code, configuration, SQL, test, documentation, infrastructure
+- Whether matches are in active code or archived/deprecated paths
+- Whether the repository contains direct feature logic or only indirect references
+- Brief note on what the repository appears to own (one sentence)
+
+### Volume Thresholds
+
+| Result Count | Interpretation | Action |
+|-------------|----------------|--------|
+| 0 matches | Term may be misspelled or feature is genuinely absent | Check spelling; try alternate forms; move on |
+| 1-30 matches | Good specificity | Process all matches, classify each |
+| 30-100 matches | Moderate noise likely | Scan for repository-level patterns; focus on direct matches |
+| 100+ matches | Term is too broad | Refine: combine with qualifier, filter by path, or skip if repos already covered |
 
 ---
 
@@ -246,6 +313,42 @@ ASCII or text-based diagram showing how data flows through the affected systems 
 
 ---
 
+# Context Management
+
+## Process Results Inline — Never Save Raw Output to Files
+
+After each Sourcebot search or file read, extract key facts into bullet points **in the same turn**. Do NOT retain raw search output in your working context past the current step.
+
+**Critical: Do not save Sourcebot search results to files for later processing.** This is the single most common failure mode in research tasks. When raw MCP tool output is written to a file, the structured data is lost — sub-agents spawned to parse those files cannot use MCP tools, and they waste dozens of turns attempting grep/sed/awk/python to extract information that was already structured in the original tool response. Process results as they arrive.
+
+## When to Use Sub-Agents
+
+**YES — use sub-agents for:**
+- Reading specific source files in a cloned repository (Read, Glob, Grep)
+- Exploring directory trees of cloned repositories
+- Summarizing a group of related source files that are already on disk
+
+**NO — never use sub-agents for:**
+- Processing or parsing Sourcebot search results
+- Summarizing Sourcebot output that has been saved to a file
+- Any task where the sub-agent would need MCP tools that are only available in the parent context
+
+## Write Incrementally
+
+Build the output file section-by-section. Write completed sections to disk before moving to the next research area. This protects against context window exhaustion and preserves progress.
+
+## Working Notes Pattern
+
+Maintain a compact per-repository tracking format in your working context:
+
+```
+REPO: {name} | PROJECT: {project} | TERMS: P1-key, P2-provider | MATCHES: 12 code, 3 sql | TYPE: direct | NOTES: owns provider logic
+```
+
+This is for your own tracking only — do not include working notes in the final report.
+
+---
+
 # Research Standards
 
 - Do not assume code exists — verify by searching.
@@ -274,7 +377,7 @@ ASCII or text-based diagram showing how data flows through the affected systems 
 
 Output must be a single Markdown file:
 
-`.bot/workspace/product/briefing/02_REPOS_AFFECTED.md`
+`.bot/workspace/product/research-repos.md`
 
 Well-structured, evidence-based, and suitable for engineering leads and delivery managers to use for sprint planning and sizing.
 

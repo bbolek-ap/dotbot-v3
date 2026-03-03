@@ -12,7 +12,7 @@ Execute the implementation plans for each affected repository. All changes are c
 
 - Implementation plans must exist: `repos/{RepoName}/.bot/workspace/product/{RepoName}_Plan.md`
 - Repos must be cloned to `repos/{RepoName}/` with initiative branch checked out
-- `initiative.md` must exist
+- `jira-context.md` must exist
 - `04_IMPLEMENTATION_RESEARCH.md` should exist for cross-repo context
 
 ## Your Task
@@ -21,7 +21,7 @@ Execute the implementation plans for each affected repository. All changes are c
 
 ```
 read_files({ files: [
-  { path: ".bot/workspace/product/briefing/initiative.md" },
+  { path: ".bot/workspace/product/briefing/jira-context.md" },
   { path: ".bot/workspace/product/briefing/04_IMPLEMENTATION_RESEARCH.md" }
 ]})
 ```

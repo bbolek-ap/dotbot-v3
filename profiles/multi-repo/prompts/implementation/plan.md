@@ -2,7 +2,7 @@
 
 > **Purpose**: Detailed code-level implementation plan for a single repository.
 > **Repo**: {RepoName}
-> **Initiative**: (read from `initiative.md`)
+> **Initiative**: (read from `jira-context.md`)
 > **Date**: (current date)
 > **Based on**: Deep dive report (`repos/{RepoName}.md`) and implementation research (`04_IMPLEMENTATION_RESEARCH.md`)
 

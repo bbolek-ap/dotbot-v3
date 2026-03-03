@@ -1,7 +1,7 @@
 ---
 name: Create Deep Dive Tasks
-description: Parse 02_REPOS_AFFECTED.md and create per-repo deep dive tasks for MEDIUM+ impact repos
-version: 1.0
+description: Parse research-repos.md and create per-repo deep dive tasks for MEDIUM+ impact repos
+version: 2.0
 ---
 
 # Create Deep Dive Tasks
@@ -10,8 +10,8 @@ This workflow runs after the foundational research (Phase 1) completes. It reads
 
 ## Prerequisites
 
-- Phase 1 research must be complete — `02_REPOS_AFFECTED.md` must exist
-- `initiative.md` must exist for Jira key and initiative context
+- Phase 1 research must be complete — `research-repos.md` must exist
+- `jira-context.md` must exist for Jira key and initiative context
 
 ## Your Task
 
@@ -19,14 +19,14 @@ This workflow runs after the foundational research (Phase 1) completes. It reads
 
 ```
 read_files({ files: [
-  { path: ".bot/workspace/product/briefing/02_REPOS_AFFECTED.md" },
-  { path: ".bot/workspace/product/briefing/initiative.md" }
+  { path: ".bot/workspace/product/research-repos.md" },
+  { path: ".bot/workspace/product/briefing/jira-context.md" }
 ]})
 ```
 
 ### Step 2: Parse Repo Tables
 
-Parse the tier tables from `02_REPOS_AFFECTED.md`. Each tier section contains a table with columns:
+Parse the tier tables from `research-repos.md`. Each tier section contains a table with columns:
 
 | Repo | Project | Purpose | Impact |
 |------|---------|---------|--------|
@@ -47,7 +47,9 @@ Order by:
 
 ### Step 4: Create Tasks
 
-Use `task_create_bulk` to create one task per filtered repo:
+Use `task_create_bulk` to create one task per filtered repo.
+
+**Important:** Each deep-dive task must list the IDs of the 3 Phase 1 research tasks (Atlassian, internet, repos) in its `dependencies` array, so the runtime won't pick them up until all Phase 1 research is committed and merged. Retrieve the Phase 1 task IDs by checking the `done` folder or querying task status before creating deep-dive tasks.
 
 ```
 mcp__dotbot__task_create_bulk({
@@ -55,11 +57,11 @@ mcp__dotbot__task_create_bulk({
     // For each MEDIUM+ repo:
     {
       "name": "Deep dive: {RepoName}",
-      "description": "Conduct a thorough code-level analysis of the {RepoName} repository. Clone the repo, analyse source code, database scripts, configuration, and tests. Produce a structured deep-dive report.\n\nTier: {TIER}\nImpact: {IMPACT}\nProject: {PROJECT}\nPurpose: {PURPOSE}\n\nOutput: .bot/workspace/product/briefing/repos/{RepoName}.md",
+      "description": "Conduct a thorough code-level analysis of the {RepoName} repository. Clone the repo, analyse source code, database scripts, configuration, and tests. Produce a structured deep-dive report.\n\nTier: {TIER}\nImpact: {IMPACT}\nProject: {PROJECT}\nPurpose: {PURPOSE}\n\nOutput: .bot/workspace/product/research-repo-{RepoName}-summary.md",
       "category": "research",
       "effort": "{EFFORT_BASED_ON_IMPACT}",
       "priority": "{PRIORITY_BASED_ON_ORDER}",
-      "dependencies": [],
+      "dependencies": ["{PHASE1_ATLASSIAN_TASK_ID}", "{PHASE1_INTERNET_TASK_ID}", "{PHASE1_REPOS_TASK_ID}"],
       "research_prompt": "repo-deep-dive.md",
       "external_repo": {
         "project": "{PROJECT}",
@@ -70,7 +72,7 @@ mcp__dotbot__task_create_bulk({
       "working_dir": "repos/{RepoName}",
       "acceptance_criteria": [
         "Repo cloned to repos/{RepoName}/ on initiative branch",
-        "Deep dive report written to briefing/repos/{RepoName}.md",
+        "Deep dive report written to .bot/workspace/product/research-repo-{RepoName}-summary.md",
         "Reference implementation file inventory complete",
         "Files requiring changes identified with change types",
         "New files needed listed with proposed paths",
@@ -80,8 +82,8 @@ mcp__dotbot__task_create_bulk({
       ],
       "steps": [
         "Clone repo using repo_clone MCP tool (project: {PROJECT}, repo: {RepoName})",
-        "Read initiative.md and prior research documents for context",
-        "Read this repo's entry from 02_REPOS_AFFECTED.md for tier/impact context",
+        "Read jira-context.md and prior research documents for context",
+        "Read this repo's entry from research-repos.md for tier/impact context",
         "Analyse repo structure and orientation",
         "Map reference implementation files",
         "Identify entity-specific code paths",
@@ -89,7 +91,7 @@ mcp__dotbot__task_create_bulk({
         "Analyse database impact",
         "Review API contracts and test coverage",
         "Identify dependencies on other repos",
-        "Write structured deep-dive report to briefing/repos/{RepoName}.md",
+        "Write structured deep-dive report to .bot/workspace/product/research-repo-{RepoName}-summary.md",
         "Create per-repo workspace: repos/{RepoName}/.bot/workspace/{product,tasks}/"
       ],
       "applicable_standards": [".bot/prompts/standards/global/research-output.md"],
@@ -124,7 +126,7 @@ After `task_create_bulk` returns, verify:
 5. Each task has `working_dir` pointing to its clone path
 
 Report the result:
-- Total repos found in `02_REPOS_AFFECTED.md`
+- Total repos found in `research-repos.md`
 - Repos filtered (MEDIUM+)
 - Tasks created
 - Repos skipped (LOW/LOW-MEDIUM impact)
@@ -146,4 +148,4 @@ One task per MEDIUM+ impact repo in `.bot/workspace/tasks/todo/`, each with:
 - Include the ADO project name from the table (needed for `repo_clone`)
 - Do NOT clone repos — task execution will handle cloning
 - Do NOT execute deep dives — only create the tasks
-- If `02_REPOS_AFFECTED.md` contains no MEDIUM+ repos, report that and create zero tasks
+- If `research-repos.md` contains no MEDIUM+ repos, report that and create zero tasks

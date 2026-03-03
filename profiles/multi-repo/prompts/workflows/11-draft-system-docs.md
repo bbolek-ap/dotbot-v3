@@ -15,7 +15,7 @@ The final phase of the multi-repo initiative lifecycle. For each affected repo, 
 
 - Implementation outcomes must exist: `{RepoName}_Outcomes.md`
 - Remediation reports should exist: `{RepoName}_Remediation.md`
-- `initiative.md` must exist for Jira key and initiative name
+- `jira-context.md` must exist for Jira key and initiative name
 - `.env.local` must have valid AZURE_DEVOPS_PAT
 - `az` CLI must be available for PR creation
 
@@ -25,7 +25,7 @@ The final phase of the multi-repo initiative lifecycle. For each affected repo, 
 
 ```
 read_files({ files: [
-  { path: ".bot/workspace/product/briefing/initiative.md" }
+  { path: ".bot/workspace/product/briefing/jira-context.md" }
 ]})
 ```
 
@@ -171,7 +171,7 @@ Each discrete change from this initiative is broken down into an individual task
 | Implementation Plan | `repos/{RepoName}/.bot/workspace/product/{RepoName}_Plan.md` |
 | Outcomes | `repos/{RepoName}/.bot/workspace/product/{RepoName}_Outcomes.md` |
 | Remediation | `repos/{RepoName}/.bot/workspace/product/{RepoName}_Remediation.md` |
-| Initiative | `briefing/initiative.md` |
+| Initiative | `briefing/jira-context.md` |
 | Implementation Research | `briefing/04_IMPLEMENTATION_RESEARCH.md` |
 ```
 

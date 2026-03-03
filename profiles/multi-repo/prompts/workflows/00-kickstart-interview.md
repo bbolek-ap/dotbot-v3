@@ -1,12 +1,12 @@
 ---
 name: Kickstart Interview (Multi-Repo)
-description: Override — auto-resolve initiative from Atlassian instead of multi-round interview
-version: 1.0
+description: Override — auto-resolve initiative from Atlassian, then ask follow-up questions if needed
+version: 1.1
 ---
 
 # Kickstart: Auto-Resolve from Atlassian
 
-You are initializing a multi-repo initiative. Instead of a multi-round interview, you will auto-resolve the initiative context from Atlassian (Jira + Confluence) using the user's prompt.
+You are initializing a multi-repo initiative. You will auto-resolve the initiative context from Atlassian (Jira + Confluence) using the user's prompt, then decide whether follow-up questions are needed.
 
 ## Context Provided
 
@@ -22,8 +22,21 @@ Extract the Jira key from the user's prompt using the pattern `[A-Z]{2,10}-\d+`.
 If no Jira key is found:
 - Use the prompt text as the initiative name
 - Skip Atlassian resolution
-- Populate `initiative.md` from prompt text + uploaded files
+- Populate `jira-context.md` from prompt text + uploaded files
 - Mark unresolved fields with `<!-- UNRESOLVED: field_name -->`
+
+### Step 1b: Discover Atlassian Cloud ID
+
+Before making any Jira or Confluence calls, you need the Atlassian cloud ID.
+
+Call:
+```
+mcp__atlassian__getAccessibleAtlassianResources()
+```
+
+From the response, extract the `id` field of the first (or only) cloud site. Store this as `{CLOUD_ID}` for all subsequent Atlassian MCP calls.
+
+If this call fails (MCP server unavailable), skip to Graceful Degradation.
 
 ### Step 2: Resolve from Jira
 
@@ -31,7 +44,7 @@ Use the Atlassian MCP server to fetch initiative context:
 
 **2a. Get the main issue:**
 ```
-mcp__atlassian__getJiraIssue({ issueIdOrKey: "{JIRA_KEY}" })
+mcp__atlassian__getJiraIssue({ cloudId: "{CLOUD_ID}", issueIdOrKey: "{JIRA_KEY}" })
 ```
 
 Extract:
@@ -49,6 +62,7 @@ Extract:
 **2b. Get child issues:**
 ```
 mcp__atlassian__searchJiraIssuesUsingJql({
+  cloudId: "{CLOUD_ID}",
   jql: "parent = {JIRA_KEY}",
   limit: 50
 })
@@ -57,6 +71,7 @@ mcp__atlassian__searchJiraIssuesUsingJql({
 **2c. Get linked issues:**
 ```
 mcp__atlassian__searchJiraIssuesUsingJql({
+  cloudId: "{CLOUD_ID}",
   jql: "issuekey in linkedIssues({JIRA_KEY})",
   limit: 50
 })
@@ -66,12 +81,13 @@ mcp__atlassian__searchJiraIssuesUsingJql({
 
 If the main issue has a parent key:
 ```
-mcp__atlassian__getJiraIssue({ issueIdOrKey: "{PARENT_KEY}" })
+mcp__atlassian__getJiraIssue({ cloudId: "{CLOUD_ID}", issueIdOrKey: "{PARENT_KEY}" })
 ```
 
 Then search for sibling initiatives:
 ```
 mcp__atlassian__searchJiraIssuesUsingJql({
+  cloudId: "{CLOUD_ID}",
   jql: "parent = {PARENT_KEY}",
   limit: 20
 })
@@ -84,6 +100,7 @@ From siblings, identify the best **reference implementation** candidate:
 **2e. Search Confluence:**
 ```
 mcp__atlassian__searchConfluenceUsingCql({
+  cloudId: "{CLOUD_ID}",
   cql: "text ~ \"{JIRA_KEY}\" OR text ~ \"{INITIATIVE_NAME}\"",
   limit: 20
 })
@@ -91,7 +108,7 @@ mcp__atlassian__searchConfluenceUsingCql({
 
 Read up to `max_pages_to_read` (from settings, default 10) key pages:
 ```
-mcp__atlassian__getConfluencePage({ pageId: "{PAGE_ID}" })
+mcp__atlassian__getConfluencePage({ cloudId: "{CLOUD_ID}", pageId: "{PAGE_ID}" })
 ```
 
 Extract page title, space, and a ~500 character excerpt from each page.
@@ -103,14 +120,14 @@ Load profile settings for organisation-specific values:
 read_files({ files: [{ path: ".bot/defaults/settings.default.json" }] })
 ```
 
-Also check `.env.local` for ADO org URL and Atlassian cloud ID (these are loaded into process environment by profile-init.ps1).
+Also check `.env.local` for ADO org URL (loaded into process environment by profile-init.ps1).
 
-### Step 4: Write `initiative.md`
+### Step 4: Write `jira-context.md`
 
-Write the populated template to `.bot/workspace/product/briefing/initiative.md`:
+Write a clean, machine-readable Jira reference to `.bot/workspace/product/briefing/jira-context.md`:
 
 ```markdown
-# Initiative: {INITIATIVE_NAME}
+# Jira Context: {INITIATIVE_NAME}
 
 ## Metadata
 
@@ -204,14 +221,54 @@ Write the populated template to `.bot/workspace/product/briefing/initiative.md`:
 
 For any field that could not be resolved, use `<!-- UNRESOLVED: field_name -->` as the value.
 
-### Step 5: Write Completion Signal
+### Step 5: Decide — Follow-Up Questions or Complete
 
-Write `.bot/workspace/product/interview-summary.md`:
+After writing `jira-context.md`, count the `<!-- UNRESOLVED: ... -->` markers. Also consider whether the business objective, team composition, reference implementation, or scope are sufficiently clear.
+
+**Check for previous Q&A rounds**: If earlier interview rounds provided answers (available in your context as previous Q&A), incorporate those answers — do NOT re-ask questions that were already answered.
+
+#### Decision A: Significant gaps remain → Ask follow-up questions
+
+If there are 3+ unresolved fields, or if critical fields (business objective, scope, reference implementation) are unclear, write `.bot/workspace/product/clarification-questions.json`:
+
+```json
+{
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Clear, specific question about an unresolved field",
+      "context": "Why this matters — what Atlassian could not resolve",
+      "options": [
+        { "key": "A", "label": "Option label", "rationale": "Why you might choose this" },
+        { "key": "B", "label": "Option label", "rationale": "Why you might choose this" }
+      ],
+      "recommendation": "A"
+    }
+  ]
+}
+```
+
+Focus questions on:
+- Fields marked `<!-- UNRESOLVED -->` in `jira-context.md`
+- Missing context that Atlassian didn't provide (architecture decisions, scope boundaries, deployment targets)
+- Ambiguous business objectives that need user clarification
+- Reference implementation selection if multiple candidates exist
+
+Rules for questions:
+- Each question must have 2-5 options (A through E)
+- Option A should be the recommended choice
+- Provide clear rationale for each option
+- No artificial limit on question count — ask as many as genuinely needed
+- Do NOT re-ask questions already answered in previous rounds
+
+#### Decision B: Resolution is sufficient → Complete
+
+If all critical fields are resolved (either from Atlassian, the user's prompt, uploaded files, or previous Q&A rounds), write `.bot/workspace/product/interview-summary.md`:
 
 ```markdown
 # Interview Summary
 
-Auto-resolved from Atlassian. See `briefing/initiative.md` for full context.
+Auto-resolved from Atlassian. See `briefing/jira-context.md` for full context.
 
 ## Resolution Method
 - **Source**: Atlassian MCP (Jira + Confluence)
@@ -222,25 +279,32 @@ Auto-resolved from Atlassian. See `briefing/initiative.md` for full context.
 - **Sibling Initiatives**: {N} found
 
 ## Unresolved Fields
-{LIST_OF_UNRESOLVED_FIELDS_OR_NONE}
+{LIST_OF_REMAINING_UNRESOLVED_FIELDS_OR_NONE}
+
+## User Clarifications
+{SUMMARY_OF_QA_ROUNDS_IF_ANY}
 
 ## MCP Errors (if any)
 {LIST_OF_FAILED_MCP_CALLS_OR_NONE}
 ```
 
+If previous Q&A rounds occurred, include a **User Clarifications** section summarising each question and the user's verbatim answer with your interpretation.
+
 ### Graceful Degradation
 
 If Atlassian MCP is unavailable or returns errors:
 
-1. Populate `initiative.md` from the user's prompt text + any uploaded files
+1. Populate `jira-context.md` from the user's prompt text + any uploaded files
 2. Mark unresolved fields with `<!-- UNRESOLVED: field_name -->`
-3. Log which MCP calls failed in `interview-summary.md`
-4. Still write both files — the system can proceed with partial data
+3. Log which MCP calls failed
+4. Write `clarification-questions.json` asking the user to provide the missing context manually — the interview loop will present these questions in the UI
 
 ## Critical Rules
 
-- Write **exactly two files**: `briefing/initiative.md` AND `interview-summary.md`
+- Always write `briefing/jira-context.md` first (Steps 1-4)
+- Then write **exactly one** of: `clarification-questions.json` OR `interview-summary.md`
+- **NEVER** write both `clarification-questions.json` and `interview-summary.md` in the same round
 - Do NOT create any other files (no mission.md, no tech-stack.md, etc.)
 - Do NOT use task management tools
-- Do NOT conduct a multi-round interview — auto-resolve from Atlassian
-- If the user's prompt is very detailed, extract what you can and note the rest for manual review
+- You may ask clarification questions if Atlassian resolution leaves significant gaps
+- On round 2+, you still have `jira-context.md` from round 1 — do not re-write it, just decide between questions and summary

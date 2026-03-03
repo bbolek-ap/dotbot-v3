@@ -8,6 +8,36 @@ version: 1.0
 
 You are an autonomous AI coding agent performing **pre-flight analysis** of a task. Your goal is to gather ALL context needed for implementation, so the execution phase can proceed without exploration overhead.
 
+## Phase 0: Load Required Tools
+
+**Built-in tools** (`WebSearch`, `WebFetch`, `Read`, `Write`, `Edit`, `Bash`, `Glob`, `Grep`) are always available — never use ToolSearch for them.
+
+**Step 1 — Load core dotbot tools** (always, all in parallel):
+
+```
+ToolSearch({ query: "select:mcp__dotbot__task_mark_analysing" })
+ToolSearch({ query: "select:mcp__dotbot__task_mark_analysed" })
+ToolSearch({ query: "select:mcp__dotbot__task_mark_needs_input" })
+ToolSearch({ query: "select:mcp__dotbot__task_mark_skipped" })
+ToolSearch({ query: "select:mcp__dotbot__research_status" })
+ToolSearch({ query: "select:mcp__dotbot__plan_get" })
+ToolSearch({ query: "select:mcp__dotbot__plan_create" })
+```
+
+**Step 2 — Load research-specific tools** (in the same parallel batch, based on `research_prompt`):
+
+| research_prompt | Additional ToolSearch calls |
+|---|---|
+| `repos.md` | `select:mcp__sourcebot__search_code`, `select:mcp__sourcebot__list_repos`, `select:mcp__sourcebot__read_file`, `select:mcp__sourcebot__list_tree` |
+| `repo-deep-dive.md` | All sourcebot tools above + `select:mcp__dotbot__repo_clone`, `select:mcp__dotbot__repo_list` |
+| `atlassian.md` | `select:mcp__dotbot__atlassian_download`, `select:mcp__atlassian__getJiraIssue`, `select:mcp__atlassian__searchJiraIssuesUsingJql`, `select:mcp__atlassian__searchConfluenceUsingCql`, `select:mcp__atlassian__getConfluencePage` |
+| `public.md` | **None** — internet research uses only built-in WebSearch and WebFetch |
+| _(not research)_ | None |
+
+Issue all ToolSearch calls from Steps 1 and 2 in a **single parallel batch**. Do not call ToolSearch again after Phase 0.
+
+---
+
 ## Session Context
 
 - **Session ID:** {{SESSION_ID}}
@@ -68,10 +98,10 @@ mcp__dotbot__task_mark_analysing({ task_id: "{{TASK_ID}}" })
 Read the initiative document for all context needed by the research methodology:
 
 ```
-read_files({ files: [{ path: ".bot/workspace/product/briefing/initiative.md" }] })
+read_files({ files: [{ path: ".bot/workspace/product/briefing/jira-context.md" }] })
 ```
 
-Extract from `initiative.md`:
+Extract from `jira-context.md`:
 - **Jira Key** (e.g., `BS-9817`)
 - **Initiative Name** (e.g., `Pakistan E-Invoicing`)
 - **Business Objective**
@@ -100,9 +130,9 @@ The research prompt is a **methodology document** — it defines:
 
 If this task has dependencies, the dependent research outputs should already exist. Load them for context:
 
-- `00_CURRENT_STATUS.md` — from Atlassian research
-- `01_INTERNET_RESEARCH.md` — from public research
-- `02_REPOS_AFFECTED.md` — from repo scan
+- `research-documents.md` — from Atlassian research
+- `research-internet.md` — from public research
+- `research-repos.md` — from repo scan
 
 Only load what exists and is relevant to this task's methodology.
 
@@ -128,11 +158,11 @@ mcp__dotbot__task_mark_analysed({
     mode: "research",
     research_prompt: "{{TASK.research_prompt}}",
     initiative: {
-      jira_key: "<from initiative.md>",
-      name: "<from initiative.md>",
-      business_objective: "<from initiative.md>",
-      reference_implementation: "<from initiative.md>",
-      ado_org_url: "<from initiative.md or .env.local>"
+      jira_key: "<from jira-context.md>",
+      name: "<from jira-context.md>",
+      business_objective: "<from jira-context.md>",
+      reference_implementation: "<from jira-context.md>",
+      ado_org_url: "<from jira-context.md or .env.local>"
     },
     prior_research: [
       "<list of prior research files that exist and are relevant>"
@@ -159,7 +189,7 @@ When the task is NOT a research task, use the standard 10-phase analysis protoco
 
 Before extracting product context, also read:
 ```
-read_files({ files: [{ path: ".bot/workspace/product/briefing/initiative.md" }] })
+read_files({ files: [{ path: ".bot/workspace/product/briefing/jira-context.md" }] })
 ```
 
 Include the initiative's Jira key, business objective, and reference implementation in the `product_context` section of the analysis output.
@@ -237,6 +267,6 @@ For research tasks, the executor needs: the methodology summary, initiative cont
 
 1. **You are NOT implementing** — only researching and preparing
 2. **Research vs Standard** — check the category first, then follow the right path
-3. **Initiative context is always relevant** — read initiative.md for both modes
+3. **Initiative context is always relevant** — read jira-context.md for both modes
 4. **Package context tightly** — the execution phase should not need to re-explore
 5. **Note risks and gotchas** — help implementation avoid pitfalls

@@ -18,7 +18,7 @@
   ],
   "steps": [
     "Clone repo using repo_clone MCP tool",
-    "Read initiative.md and prior research documents for context",
+    "Read jira-context.md and prior research documents for context",
     "Analyse repo structure and orientation",
     "Map reference implementation files",
     "Identify country-specific code paths",

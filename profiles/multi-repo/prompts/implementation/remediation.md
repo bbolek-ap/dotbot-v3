@@ -2,7 +2,7 @@
 
 > **Purpose**: Record of build/test fixes applied after initial implementation.
 > **Repo**: {RepoName}
-> **Initiative**: (read from `initiative.md`)
+> **Initiative**: (read from `jira-context.md`)
 > **Date**: (current date)
 > **Outcomes**: `{RepoName}_Outcomes.md`
 

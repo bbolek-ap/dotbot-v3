@@ -12,7 +12,7 @@ After all deep dives complete, synthesize the findings into a single actionable 
 
 - All deep dive reports must exist in `.bot/workspace/product/briefing/repos/`
 - Foundational research (00, 01, 02) must be complete
-- `initiative.md` must exist
+- `jira-context.md` must exist
 
 ## Your Task
 
@@ -20,10 +20,10 @@ After all deep dives complete, synthesize the findings into a single actionable 
 
 ```
 read_files({ files: [
-  { path: ".bot/workspace/product/briefing/initiative.md" },
-  { path: ".bot/workspace/product/briefing/00_CURRENT_STATUS.md" },
-  { path: ".bot/workspace/product/briefing/01_INTERNET_RESEARCH.md" },
-  { path: ".bot/workspace/product/briefing/02_REPOS_AFFECTED.md" }
+  { path: ".bot/workspace/product/briefing/jira-context.md" },
+  { path: ".bot/workspace/product/research-documents.md" },
+  { path: ".bot/workspace/product/research-internet.md" },
+  { path: ".bot/workspace/product/research-repos.md" }
 ]})
 ```
 
@@ -45,7 +45,7 @@ Produce `.bot/workspace/product/briefing/04_IMPLEMENTATION_RESEARCH.md` covering
 
 2. **How Previous Analogous Implementations Were Done** — Pattern analysis across reference implementations found in deep dives. Common approach, variations, timeline. Comparison table.
 
-3. **Initiative-Specific Requirements** — From 01_INTERNET_RESEARCH.md: regulatory, technical, business requirements specific to this initiative.
+3. **Initiative-Specific Requirements** — From research-internet.md: regulatory, technical, business requirements specific to this initiative.
 
 4. **What Differs from Existing Implementations** — Unique aspects of this initiative vs the reference. New patterns needed, gaps in existing infrastructure.
 

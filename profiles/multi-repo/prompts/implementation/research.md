@@ -1,7 +1,7 @@
 # Implementation Research Template
 
 > **Purpose**: Consolidate platform knowledge and initiative-specific technical/regulatory insights to support efficient delivery.
-> **Initiative**: (read from `initiative.md`)
+> **Initiative**: (read from `jira-context.md`)
 > **Date**: (current date)
 > **Status**: Research — living document
 
@@ -174,9 +174,9 @@ For each affected repo:
 
 | Type | Reference | Link/Path |
 |------|-----------|-----------|
-| Jira | Initiative ticket | (from initiative.md) |
-| Confluence | Key documentation | (from initiative.md) |
-| Research | Current status | `00_CURRENT_STATUS.md` |
-| Research | Public/regulatory | `01_INTERNET_RESEARCH.md` |
-| Research | Repo inventory | `02_REPOS_AFFECTED.md` |
+| Jira | Initiative ticket | (from jira-context.md) |
+| Confluence | Key documentation | (from jira-context.md) |
+| Research | Current status | `research-documents.md` |
+| Research | Public/regulatory | `research-internet.md` |
+| Research | Repo inventory | `research-repos.md` |
 | Deep Dives | Per-repo analysis | `repos/*.md` |

@@ -24,6 +24,16 @@ This standard applies to all research artifacts produced by research-category ta
 
 5. **Recency** — prefer the most recent information. When citing dated sources, include the date.
 
+## Privacy
+
+1. **No absolute file system paths** — never include paths like `C:\Users\...`, `/home/...`, or `/Users/...`. These trigger the pre-commit privacy scan and leak local environment details.
+
+2. **No credentials** — no API keys, tokens, passwords, or connection strings in research output.
+
+3. **Relative paths only** — when referencing local files, use paths relative to the project root (e.g., `repos/MyRepo/src/Program.cs` not `/c/Users/dev/repos/MyRepo/src/Program.cs`).
+
+4. **Repo references by name** — reference repositories by name (e.g., "the EInvoiceUpload repo"), not by full clone path.
+
 ## Quality Checks
 
 1. **Completeness** — all methodology-required sections are present and populated (or explicitly marked as empty with reason).
@@ -50,4 +60,4 @@ This standard applies to all research artifacts produced by research-category ta
 
 5. **Line length** — no hard wrapping. Let the renderer handle line breaks.
 
-6. **File naming** — follow the naming convention specified by the research methodology (e.g., `00_CURRENT_STATUS.md`, `repos/EInvoiceUpload.md`).
+6. **File naming** — follow the naming convention specified by the research methodology (e.g., `research-documents.md`, `repos/EInvoiceUpload.md`).

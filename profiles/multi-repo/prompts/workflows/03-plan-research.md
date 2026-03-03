@@ -1,28 +1,28 @@
 ---
 name: Plan Research
 description: Create the 3 foundational research tasks via task_create_bulk
-version: 1.0
+version: 2.0
 ---
 
 # Plan Research
 
-This workflow creates the initial research tasks that form the foundation of the multi-repo initiative lifecycle. These tasks use the research prompts as methodologies and produce structured output to the briefing directory.
+This workflow creates the initial research tasks that form the foundation of the multi-repo initiative lifecycle. All 3 tasks run in parallel (no inter-dependencies) and produce structured output to specific paths.
 
 ## Prerequisites
 
 Before running this workflow:
-- Phase 0 (kickstart) must be complete — `briefing/initiative.md` must exist
+- Phase 0 (kickstart) must be complete — `briefing/jira-context.md` must exist
 - Phase 0.5 (plan product) must be complete — `mission.md` and `roadmap-overview.md` must exist
 
 ## Your Task
 
-Create exactly 3 research tasks using `task_create_bulk`. These tasks cover the three foundational research streams:
+Create exactly 3 research tasks using `task_create_bulk`. These tasks cover the three foundational research streams — all run in **parallel** with no dependencies between them.
 
 ### Step 1: Read Initiative Context
 
 ```
 read_files({ files: [
-  { path: ".bot/workspace/product/briefing/initiative.md" },
+  { path: ".bot/workspace/product/briefing/jira-context.md" },
   { path: ".bot/workspace/product/mission.md" }
 ]})
 ```
@@ -35,91 +35,85 @@ Extract the initiative name and Jira key for task naming.
 mcp__dotbot__task_create_bulk({
   tasks: [
     {
-      "name": "Research Atlassian for {INITIATIVE_NAME}",
-      "description": "Conduct a comprehensive scan of all Jira tickets, Confluence pages, comments, and related documentation for {JIRA_KEY}. Produce a structured current status report covering scope, risks, blockers, similar projects, and recommendations.\n\nOutput: .bot/workspace/product/briefing/00_CURRENT_STATUS.md",
+      "name": "Deep Internet Research for {INITIATIVE_NAME}",
+      "description": "Conduct comprehensive internet research covering business context, regulatory requirements, alternative products/approaches, and technical documentation for {INITIATIVE_NAME}.\n\nOutput: .bot/workspace/product/research-internet.md",
+      "category": "research",
+      "effort": "L",
+      "priority": 1,
+      "dependencies": [],
+      "research_prompt": "public.md",
+      "acceptance_criteria": [
+        "research-internet.md written to .bot/workspace/product/",
+        "Business context and market landscape documented",
+        "Regulatory and compliance requirements researched",
+        "Alternative products and approaches evaluated",
+        "Technical documentation and patterns catalogued",
+        "All sources cited with URLs"
+      ],
+      "steps": [
+        "Read jira-context.md for initiative name and business objective",
+        "Load research methodology from prompts/research/public.md",
+        "Research business context, regulatory landscape, and compliance requirements",
+        "Identify alternative products, competing approaches, and industry benchmarks",
+        "Gather technical documentation, API references, and integration patterns",
+        "Write structured report to .bot/workspace/product/research-internet.md"
+      ],
+      "applicable_standards": [".bot/prompts/standards/global/research-output.md"],
+      "applicable_agents": [".bot/prompts/agents/researcher/AGENT.md"]
+    },
+    {
+      "name": "Deep Atlassian Research for {INITIATIVE_NAME}",
+      "description": "Download all relevant Atlassian attachments and Confluence documents for {JIRA_KEY}. Produce a document index with content summaries and relevance scores.\n\nDownloads: briefing/docs/ (via atlassian_download tool)\nOutput: .bot/workspace/product/research-documents.md",
       "category": "research",
       "effort": "L",
       "priority": 1,
       "dependencies": [],
       "research_prompt": "atlassian.md",
       "acceptance_criteria": [
-        "00_CURRENT_STATUS.md written to .bot/workspace/product/briefing/",
-        "All Jira tickets related to the initiative catalogued",
-        "Confluence documentation gaps identified",
+        "All Jira attachments downloaded to briefing/docs/",
+        "All relevant Confluence attachments downloaded to briefing/docs/",
+        "research-documents.md written to .bot/workspace/product/",
+        "Document index table with: relative path, content summary, relevance score (1-10)",
         "Cross-source contradictions flagged",
-        "Similar/predecessor projects analysed",
-        "Recommended next actions provided"
+        "Key findings extracted from each document"
       ],
       "steps": [
-        "Read initiative.md for Jira key, initiative name, and context",
+        "Read jira-context.md for Jira key, initiative name, and context",
         "Load research methodology from prompts/research/atlassian.md",
-        "Scan Jira: parent epic, linked issues, comments, status history",
-        "Scan Confluence: pages referencing Jira key or initiative name",
-        "Cross-reference Jira status vs Confluence documentation",
-        "Identify similar/predecessor projects and extract lessons",
-        "Write structured report to briefing/00_CURRENT_STATUS.md"
+        "Call atlassian_download tool to download all attachments",
+        "Read and summarise each downloaded document",
+        "Scan Jira comments and status history for additional context",
+        "Scan Confluence pages for related documentation",
+        "Write document index to .bot/workspace/product/research-documents.md"
       ],
       "applicable_standards": [".bot/prompts/standards/global/research-output.md"],
       "applicable_agents": [".bot/prompts/agents/researcher/AGENT.md"]
     },
     {
-      "name": "Research public and regulatory context for {INITIATIVE_NAME}",
-      "description": "Conduct structured internet research to identify industry best practices, regulatory requirements, comparable case studies, technical patterns, and risk landscape for {INITIATIVE_NAME}.\n\nOutput: .bot/workspace/product/briefing/01_INTERNET_RESEARCH.md",
-      "category": "research",
-      "effort": "L",
-      "priority": 2,
-      "dependencies": [],
-      "research_prompt": "public.md",
-      "acceptance_criteria": [
-        "01_INTERNET_RESEARCH.md written to .bot/workspace/product/briefing/",
-        "Industry context and landscape documented",
-        "Comparable case studies identified",
-        "Regulatory and compliance requirements researched",
-        "Technical patterns and best practices catalogued",
-        "All sources cited with URLs"
-      ],
-      "steps": [
-        "Read initiative.md for initiative name and business objective",
-        "Load research methodology from prompts/research/public.md",
-        "Research industry context and market landscape",
-        "Identify comparable initiatives and case studies",
-        "Research regulatory and compliance requirements",
-        "Identify technical patterns and best practices",
-        "Write structured report to briefing/01_INTERNET_RESEARCH.md"
-      ],
-      "applicable_standards": [".bot/prompts/standards/global/research-output.md"],
-      "applicable_agents": [".bot/prompts/agents/researcher/AGENT.md"]
-    },
-    {
-      "name": "Scan repos for impact of {INITIATIVE_NAME}",
-      "description": "Identify all repositories affected by {JIRA_KEY} using source code search. Classify repos by tier (1-6) and impact (HIGH/MEDIUM/LOW). Map cross-repo dependencies. Produce a structured impact assessment.\n\nOutput: .bot/workspace/product/briefing/02_REPOS_AFFECTED.md\n\nDepends on: Atlassian and public research (for context and search terms).",
+      "name": "Deep Sourcebot Research for {INITIATIVE_NAME}",
+      "description": "Use Sourcebot MCP tools to discover all repositories relevant to {JIRA_KEY}. Classify repos by relevance and impact. Map cross-repo dependencies.\n\nOutput: .bot/workspace/product/research-repos.md",
       "category": "research",
       "effort": "XL",
-      "priority": 3,
-      "dependencies": [
-        "Research Atlassian for {INITIATIVE_NAME}",
-        "Research public and regulatory context for {INITIATIVE_NAME}"
-      ],
+      "priority": 1,
+      "dependencies": [],
       "research_prompt": "repos.md",
       "acceptance_criteria": [
-        "02_REPOS_AFFECTED.md written to .bot/workspace/product/briefing/",
-        "All affected repos identified and classified by tier",
-        "Impact levels assigned (HIGH/MEDIUM/LOW) per repo",
+        "research-repos.md written to .bot/workspace/product/",
+        "All relevant repos identified using Sourcebot search",
+        "Repos classified by tier (1-6) and impact (HIGH/MEDIUM/LOW)",
         "Cross-repo dependencies mapped",
         "Reference implementation pattern identified",
-        "Deep dive sections for HIGH-impact repos included",
-        "End-to-end data flow diagram provided"
+        "Each repo entry includes: name, project, relevance rationale, impact level"
       ],
       "steps": [
-        "Read initiative.md for context and search terms",
-        "Read 00_CURRENT_STATUS.md and 01_INTERNET_RESEARCH.md for domain context",
+        "Read jira-context.md for context and search terms",
         "Load research methodology from prompts/research/repos.md",
-        "Establish search terms from initiative domain",
-        "Scan repos using Sourcebot/code search",
-        "Classify repos by tier (1-6) and impact level",
+        "Use Sourcebot MCP tools to search for code patterns related to the initiative",
+        "Discover repos by searching for domain entities, configuration keys, API patterns",
+        "Classify repos by tier (1-6) and impact level (HIGH/MEDIUM/LOW)",
         "Map cross-repo dependencies and integration points",
         "Identify reference implementation",
-        "Write structured report to briefing/02_REPOS_AFFECTED.md"
+        "Write structured report to .bot/workspace/product/research-repos.md"
       ],
       "applicable_standards": [".bot/prompts/standards/global/research-output.md"],
       "applicable_agents": [".bot/prompts/agents/researcher/AGENT.md"]
@@ -132,24 +126,23 @@ mcp__dotbot__task_create_bulk({
 
 After `task_create_bulk` returns, verify:
 1. All 3 tasks created successfully (check `created_count == 3`)
-2. Tasks 1 and 2 have no dependencies
-3. Task 3 depends on tasks 1 and 2
-4. All tasks have `category: "research"` and `research_prompt` fields
+2. All 3 tasks have **no dependencies** (they run in parallel)
+3. All tasks have `category: "research"` and `research_prompt` fields
 
 Report the result to the user.
 
 ## Output
 
 Three research tasks in `.bot/workspace/tasks/todo/`:
-1. Atlassian research (no dependencies, priority 1)
-2. Public/regulatory research (no dependencies, priority 2)
-3. Repo impact scan (depends on 1 + 2, priority 3)
+1. Deep Internet Research (no dependencies, priority 1)
+2. Deep Atlassian Research (no dependencies, priority 1)
+3. Deep Sourcebot Research (no dependencies, priority 1)
 
 ## Critical Rules
 
 - Create exactly 3 tasks — no more, no fewer
 - Use `task_create_bulk` — not individual `task_create` calls
 - Include `research_prompt` field on each task
-- Set correct dependencies: task 3 depends on tasks 1 and 2
-- Use the initiative name and Jira key from `initiative.md` in task names
+- All 3 tasks are **parallel** — no dependencies between them
+- Use the initiative name and Jira key from `jira-context.md` in task names
 - Do NOT execute the research — only create the tasks

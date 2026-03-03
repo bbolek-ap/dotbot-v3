@@ -8,22 +8,39 @@ function Invoke-ResearchStatus {
     # Check core artifacts
     # ---------------------------------------------------------------------------
     $coreArtifacts = @(
-        @{ Name = "initiative.md";            Phase = "Phase 0";  Required = $true  }
-        @{ Name = "00_CURRENT_STATUS.md";     Phase = "Phase 1";  Required = $true  }
-        @{ Name = "01_INTERNET_RESEARCH.md";  Phase = "Phase 1";  Required = $true  }
-        @{ Name = "02_REPOS_AFFECTED.md";     Phase = "Phase 1";  Required = $true  }
-        @{ Name = "03_CROSS_CUTTING_CONCERNS.md"; Phase = "Phase 3"; Required = $false }
-        @{ Name = "04_IMPLEMENTATION_RESEARCH.md"; Phase = "Phase 2b"; Required = $false }
-        @{ Name = "05_DEPENDENCY_MAP.md";     Phase = "Phase 3";  Required = $false }
-        @{ Name = "06_OPEN_QUESTIONS.md";     Phase = "Phase 3";  Required = $false }
+        @{ Name = "jira-context.md"; Dir = "briefing"; Phase = "Phase 0";  Required = $true  }
+    )
+
+    # Research outputs live in the product dir, not briefing
+    $researchArtifacts = @(
+        @{ Name = "research-internet.md";    Dir = "product"; Phase = "Phase 1";  Required = $true  }
+        @{ Name = "research-documents.md";   Dir = "product"; Phase = "Phase 1";  Required = $true  }
+        @{ Name = "research-repos.md";       Dir = "product"; Phase = "Phase 1";  Required = $true  }
     )
 
     $artifacts = @()
     $existCount = 0
     $requiredMissing = @()
 
+    # Check briefing artifacts
     foreach ($a in $coreArtifacts) {
-        $path = Join-Path $briefingDir $a.Name
+        $dir = if ($a.Dir -eq "product") { $productDir } else { $briefingDir }
+        $path = Join-Path $dir $a.Name
+        $exists = Test-Path $path
+        if ($exists) { $existCount++ }
+        if ($a.Required -and -not $exists) { $requiredMissing += $a.Name }
+
+        $artifacts += @{
+            name     = $a.Name
+            phase    = $a.Phase
+            exists   = $exists
+            required = $a.Required
+        }
+    }
+
+    # Check research artifacts
+    foreach ($a in $researchArtifacts) {
+        $path = Join-Path $productDir $a.Name
         $exists = Test-Path $path
         if ($exists) { $existCount++ }
         if ($a.Required -and -not $exists) { $requiredMissing += $a.Name }
@@ -80,11 +97,11 @@ function Invoke-ResearchStatus {
     # Determine overall phase
     # ---------------------------------------------------------------------------
     $phase = "not-started"
-    $initiativeExists = Test-Path (Join-Path $briefingDir "initiative.md")
+    $initiativeExists = Test-Path (Join-Path $briefingDir "jira-context.md")
     $missionExists    = Test-Path (Join-Path $productDir "mission.md")
-    $researchComplete = (Test-Path (Join-Path $briefingDir "00_CURRENT_STATUS.md")) -and
-                        (Test-Path (Join-Path $briefingDir "01_INTERNET_RESEARCH.md")) -and
-                        (Test-Path (Join-Path $briefingDir "02_REPOS_AFFECTED.md"))
+    $researchComplete = (Test-Path (Join-Path $productDir "research-internet.md")) -and
+                        (Test-Path (Join-Path $productDir "research-documents.md")) -and
+                        (Test-Path (Join-Path $productDir "research-repos.md"))
     $implResearchExists = Test-Path (Join-Path $briefingDir "04_IMPLEMENTATION_RESEARCH.md")
 
     if ($initiativeExists) { $phase = "kickstarted" }
@@ -106,7 +123,7 @@ function Invoke-ResearchStatus {
         deep_dive_count   = $deepDives.Count
         index_exists      = $indexExists
         artifacts_found   = $existCount
-        artifacts_total   = $coreArtifacts.Count
+        artifacts_total   = $coreArtifacts.Count + $researchArtifacts.Count
         required_missing  = $requiredMissing
         message           = if ($requiredMissing.Count -eq 0) {
             "All required artifacts present. Phase: $phase. $($deepDives.Count) deep dive(s) complete."

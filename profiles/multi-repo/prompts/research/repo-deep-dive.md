@@ -1,12 +1,22 @@
 # Research Methodology: Repository Deep Dive
 
-## Objective: Generate `repos/{RepoName}.md`
+## Objective: Generate `research-repo-{RepoName}-summary.md`
 
 You are a Research AI Agent with access to a locally cloned repository and the tools necessary to explore its full source tree (file listing, pattern search, symbol navigation, file reading).
 
+The following tools were loaded in Phase 0 and are ready to use:
+- `mcp__dotbot__repo_clone` — clone an external repository
+- `mcp__dotbot__repo_list` — list cloned repositories
+- `mcp__sourcebot__search_code` — search code across indexed repositories
+- `mcp__sourcebot__list_repos` — list available repositories
+
+For local file exploration, use **built-in tools** (Read, Glob, Grep) — these never require ToolSearch.
+
+Dotbot task management tools were also loaded in Phase 0. Do not call ToolSearch during research.
+
 Your task is to conduct a thorough code-level analysis of a single repository and produce a structured deep-dive report saved as:
 
-`.bot/workspace/product/briefing/repos/{RepoName}.md`
+`.bot/workspace/product/research-repo-{RepoName}-summary.md`
 
 where `{RepoName}` matches the repository name exactly as it appears in Azure DevOps.
 
@@ -16,7 +26,7 @@ You are strictly prohibited from using emojis in the report.
 
 ## Initiative Context
 
-Read `.bot/workspace/product/briefing/initiative.md` for all initiative context including:
+Read `.bot/workspace/product/briefing/jira-context.md` for all initiative context including:
 - **Jira Key** — for branch naming and search
 - **Initiative Name** — for search terms
 - **Business Objective** — for understanding what changes are needed
@@ -29,9 +39,9 @@ Before beginning analysis you must have access to:
 
 1. **The cloned repository** — either already present locally at `repos/{RepoName}/` or cloned via the `repo_clone` MCP tool
 2. **Initiative context** — the following prior research documents:
-   - `.bot/workspace/product/briefing/00_CURRENT_STATUS.md` (current state of the initiative)
-   - `.bot/workspace/product/briefing/01_INTERNET_RESEARCH.md` (public/regulatory research)
-3. **Repo entry from the impact inventory** — this repo's row from `.bot/workspace/product/briefing/02_REPOS_AFFECTED.md`, including its tier, impact rating, known touchpoints, and any notes about analogous implementations
+   - `.bot/workspace/product/research-documents.md` (current state of the initiative)
+   - `.bot/workspace/product/research-internet.md` (public/regulatory research)
+3. **Repo entry from the impact inventory** — this repo's row from `.bot/workspace/product/research-repos.md`, including its tier, impact rating, known touchpoints, and any notes about analogous implementations
 4. **Reference implementation guidance** — if the initiative involves extending a pattern that already exists for another entity, identify and use that existing implementation as the reference template throughout this analysis
 
 If the repository has not yet been cloned, use the `repo_clone` MCP tool to clone it.
@@ -186,12 +196,12 @@ The generated file must follow this structure:
 ## Repository Overview
 
 - **Repository**: {RepoName}
-- **Azure DevOps URL**: (from initiative.md organisation settings)
+- **Azure DevOps URL**: (from jira-context.md organisation settings)
 - **Primary Language(s)**: (e.g., C#, TypeScript, SQL)
 - **Framework(s)**: (e.g., .NET 6, Angular, SSDT)
 - **Repo Role**: (e.g., backend service, database project, UI app)
-- **Tier** (from `02_REPOS_AFFECTED.md`): (e.g., Tier 1)
-- **Impact Rating** (from `02_REPOS_AFFECTED.md`): (e.g., HIGH)
+- **Tier** (from `research-repos.md`): (e.g., Tier 1)
+- **Impact Rating** (from `research-repos.md`): (e.g., HIGH)
 - **Reference Implementation**: (e.g., the analogous entity used as template)
 
 ---
@@ -342,6 +352,36 @@ List questions that could not be resolved from the repository alone and require 
 
 ---
 
+# Context Management
+
+## Process Results Inline — Never Save Raw Output to Files
+
+After reading any source file or search result, extract key facts into bullet points **in the same turn**. Do NOT retain raw file contents or search output in your working context past the current step.
+
+**Critical: Do not save Sourcebot search results to files for later processing.** When raw MCP tool output is written to a file, the structured data is lost — sub-agents spawned to parse those files cannot use MCP tools, and they waste dozens of turns attempting grep/sed/awk/python to extract information that was already structured in the original tool response. Process results as they arrive.
+
+## When to Use Sub-Agents
+
+**YES — use sub-agents for:**
+- Reading and summarizing groups of related source files in the cloned repository
+- Exploring large directory trees
+- Analyzing a set of stored procedures or migration scripts
+
+**NO — never use sub-agents for:**
+- Processing or parsing Sourcebot search results
+- Summarizing any MCP tool output that has been saved to a file
+- Any task where the sub-agent would need MCP tools that are only available in the parent context
+
+## Write Incrementally
+
+Build the output file section-by-section. Write completed sections to disk before moving to the next analysis area. This protects against context window exhaustion and preserves progress.
+
+## Use Symbolic Tools
+
+Prefer symbol navigation over reading entire files — get method signatures and class outlines before reading full implementations. This reduces context consumption and speeds up analysis.
+
+---
+
 # Research Standards
 
 - Do not assume code exists — verify by searching.
@@ -373,7 +413,7 @@ List questions that could not be resolved from the repository alone and require 
 
 Output must be a single Markdown file per repository:
 
-`.bot/workspace/product/briefing/repos/{RepoName}.md`
+`.bot/workspace/product/research-repo-{RepoName}-summary.md`
 
 Well-structured, evidence-based, and suitable for an implementation engineer to use as a detailed work breakdown reference.
 

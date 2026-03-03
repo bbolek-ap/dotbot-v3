@@ -72,23 +72,19 @@ if (-not (Test-Path $envLocal)) {
 }
 
 # Validate required variables are populated
-# Reuse Load-EnvFile from dotnet profile's Common.ps1 (copied to .bot/ by overlay)
-$commonPs1 = Join-Path $BotDir "hooks\dev\Common.ps1"
-if (Test-Path $commonPs1) {
-    . $commonPs1
-    $envVars = Load-EnvFile -Path $envLocal
-    $required = @("AZURE_DEVOPS_PAT", "AZURE_DEVOPS_ORG_URL")
-    $missing = $required | Where-Object { -not $envVars[$_] }
-
-    if ($missing) {
-        Write-DotbotWarning "Missing required values in .env.local: $($missing -join ', ')"
-        Write-Status "  Edit $envLocal and fill in the missing values before running workflows"
-    } else {
-        Write-Success "All required .env.local values populated"
+$envVars = @{}
+Get-Content $envLocal | ForEach-Object {
+    if ($_ -match '^\s*([^#][^=]+)=(.*)$') {
+        $envVars[$matches[1].Trim()] = $matches[2].Trim()
     }
+}
+$required = @("AZURE_DEVOPS_PAT", "AZURE_DEVOPS_ORG_URL")
+$missing = $required | Where-Object { -not $envVars[$_] }
+if ($missing) {
+    Write-DotbotWarning "Missing required values in .env.local: $($missing -join ', ')"
+    Write-Status "  Edit $envLocal and fill in the missing values before running workflows"
 } else {
-    Write-DotbotWarning "Common.ps1 not found -- cannot validate .env.local values"
-    Write-Status "  Manually verify AZURE_DEVOPS_PAT and AZURE_DEVOPS_ORG_URL are set in $envLocal"
+    Write-Success "All required .env.local values populated"
 }
 
 # ---------------------------------------------------------------------------

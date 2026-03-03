@@ -20,7 +20,7 @@ After implementation, systematically compile and test each affected repo. Fix al
 
 ```
 read_files({ files: [
-  { path: ".bot/workspace/product/briefing/initiative.md" }
+  { path: ".bot/workspace/product/briefing/jira-context.md" }
 ]})
 ```
 
@@ -38,17 +38,20 @@ Identify repos with `status: "implemented"` — these need remediation.
 Load `.env.local` credentials. For .NET repos, ensure NuGet authentication:
 
 ```powershell
-# Try Machine-level var first (corporate workstation setup)
-$nugetPat = [System.Environment]::GetEnvironmentVariable("heimdall-access-token", "Machine")
+$nugetVarName = $env:NUGET_FEED_VAR
+if ($nugetVarName) {
+    # Try Machine-level var first (corporate workstation setup)
+    $nugetPat = [System.Environment]::GetEnvironmentVariable($nugetVarName, "Machine")
 
-# Fall back to .env.local value
-if (-not $nugetPat) { $nugetPat = $env:NUGET_FEED_PAT }
+    # Fall back to .env.local value
+    if (-not $nugetPat) { $nugetPat = $env:NUGET_FEED_PAT }
 
-# Fall back to ADO PAT
-if (-not $nugetPat) { $nugetPat = $env:AZURE_DEVOPS_PAT }
+    # Fall back to ADO PAT
+    if (-not $nugetPat) { $nugetPat = $env:AZURE_DEVOPS_PAT }
 
-if ($nugetPat) {
-    [System.Environment]::SetEnvironmentVariable("heimdall-access-token", $nugetPat, "Process")
+    if ($nugetPat) {
+        [System.Environment]::SetEnvironmentVariable($nugetVarName, $nugetPat, "Process")
+    }
 }
 ```
 
@@ -57,9 +60,12 @@ if ($nugetPat) {
 ```bash
 cd repos/{RepoName}
 
-# .NET repos:
+# .NET repos (reads NuGet env var name from NUGET_FEED_VAR):
 pwsh -Command "
-    [System.Environment]::SetEnvironmentVariable('heimdall-access-token', '{PAT}', 'Process')
+    \$varName = \$env:NUGET_FEED_VAR
+    if (\$varName) {
+        [System.Environment]::SetEnvironmentVariable(\$varName, \$env:NUGET_FEED_PAT, 'Process')
+    }
     dotnet restore src/{Solution}.sln --configfile src/NuGet.config
     dotnet build src/{Solution}.sln
 "

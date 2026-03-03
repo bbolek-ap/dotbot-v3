@@ -12,10 +12,10 @@ function Invoke-RepoClone {
     # ---------------------------------------------------------------------------
     $envLocal = Join-Path $global:DotbotProjectRoot ".env.local"
     if (Test-Path $envLocal) {
-        $commonPs1 = Join-Path $global:DotbotProjectRoot ".bot\hooks\dev\Common.ps1"
-        if (Test-Path $commonPs1) {
-            . $commonPs1
-            Load-EnvFile -Path $envLocal -Export
+        Get-Content $envLocal | ForEach-Object {
+            if ($_ -match '^\s*([^#][^=]+)=(.*)$') {
+                [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2].Trim(), "Process")
+            }
         }
     }
 
@@ -30,8 +30,8 @@ function Invoke-RepoClone {
     $reposDir  = Join-Path $global:DotbotProjectRoot "repos"
     $clonePath = Join-Path $reposDir $repo
 
-    # Read initiative.md to get Jira key for branch name
-    $initiativePath = Join-Path $global:DotbotProjectRoot ".bot\workspace\product\briefing\initiative.md"
+    # Read jira-context.md to get Jira key for branch name
+    $initiativePath = Join-Path $global:DotbotProjectRoot ".bot\workspace\product\briefing\jira-context.md"
     $jiraKey = $null
     if (Test-Path $initiativePath) {
         $content = Get-Content $initiativePath -Raw
@@ -51,7 +51,7 @@ function Invoke-RepoClone {
     }
 
     if (-not $jiraKey) {
-        throw "Cannot determine Jira key from initiative.md. Run Phase 0 (kickstart) first."
+        throw "Cannot determine Jira key from jira-context.md. Run Phase 0 (kickstart) first."
     }
 
     $workingBranch = "$branchPrefix/$jiraKey"
@@ -104,21 +104,24 @@ function Invoke-RepoClone {
     }
 
     if (Test-Path $nugetConfig) {
-        # Try Machine-level var first (corporate workstation setup)
-        $nugetPat = [System.Environment]::GetEnvironmentVariable("heimdall-access-token", "Machine")
+        $nugetVarName = $env:NUGET_FEED_VAR
+        if ($nugetVarName) {
+            # Try Machine-level var first (corporate workstation setup)
+            $nugetPat = [System.Environment]::GetEnvironmentVariable($nugetVarName, "Machine")
 
-        # Fall back to .env.local value
-        if (-not $nugetPat) {
-            $nugetPat = $env:NUGET_FEED_PAT
-        }
+            # Fall back to .env.local value
+            if (-not $nugetPat) {
+                $nugetPat = $env:NUGET_FEED_PAT
+            }
 
-        # Fall back to ADO PAT
-        if (-not $nugetPat) {
-            $nugetPat = $adoPat
-        }
+            # Fall back to ADO PAT
+            if (-not $nugetPat) {
+                $nugetPat = $adoPat
+            }
 
-        if ($nugetPat) {
-            [System.Environment]::SetEnvironmentVariable("heimdall-access-token", $nugetPat, "Process")
+            if ($nugetPat) {
+                [System.Environment]::SetEnvironmentVariable($nugetVarName, $nugetPat, "Process")
+            }
         }
     }
 

@@ -26,7 +26,7 @@ Read the briefing files created by Phase 0 (kickstart):
 
 ```
 read_files({ files: [
-  { path: ".bot/workspace/product/briefing/initiative.md" },
+  { path: ".bot/workspace/product/briefing/jira-context.md" },
   { path: ".bot/workspace/product/interview-summary.md" }
 ]})
 ```
@@ -96,12 +96,12 @@ Expanded description of the business need, regulatory requirements, or strategic
 
 | Role | Name | Responsibility |
 |------|------|----------------|
-(from initiative.md team section)
+(from jira-context.md team section)
 
 ## Related Documentation
 
 - Links to Jira tickets, Confluence pages, and other references
-(from initiative.md)
+(from jira-context.md)
 ```
 
 ### Step 4: Create `roadmap-overview.md`
@@ -121,9 +121,9 @@ Three parallel/sequential research tasks:
 
 | # | Task | Methodology | Dependencies | Output |
 |---|------|-------------|--------------|--------|
-| 1 | Atlassian Research | `atlassian.md` | None | `00_CURRENT_STATUS.md` |
-| 2 | Public/Regulatory Research | `public.md` | None | `01_INTERNET_RESEARCH.md` |
-| 3 | Repository Impact Scan | `repos.md` | Tasks 1, 2 | `02_REPOS_AFFECTED.md` |
+| 1 | Atlassian Research | `atlassian.md` | None | `research-documents.md` |
+| 2 | Public/Regulatory Research | `public.md` | None | `research-internet.md` |
+| 3 | Repository Impact Scan | `repos.md` | Tasks 1, 2 | `research-repos.md` |
 
 ### Phase 2: Deep Dives
 
@@ -179,7 +179,7 @@ Per-repo deep dives for MEDIUM+ impact repos (created after Phase 1 completes):
 
 ## Clarifying Questions
 
-This workflow does NOT ask clarifying questions in interactive mode. The initiative context from Atlassian provides sufficient direction. If critical information is missing, it will be marked as `<!-- UNRESOLVED -->` in the initiative.md and addressed during research.
+This workflow does NOT ask clarifying questions in interactive mode. The initiative context from Atlassian provides sufficient direction. If critical information is missing, it will be marked as `<!-- UNRESOLVED -->` in the jira-context.md and addressed during research.
 
 ## Output Location
 

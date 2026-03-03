@@ -13,15 +13,15 @@ After all deep dives and implementation research complete, this workflow perform
 - All deep dive reports in `briefing/repos/*.md`
 - `04_IMPLEMENTATION_RESEARCH.md` exists
 - `mission.md` exists (from Phase 0.5)
-- `initiative.md` exists
+- `jira-context.md` exists
 
 ## Your Task
 
 ### Step 1: Read All Artifacts
 
 Read all research artifacts:
-- `initiative.md`
-- `00_CURRENT_STATUS.md`, `01_INTERNET_RESEARCH.md`, `02_REPOS_AFFECTED.md`
+- `jira-context.md`
+- `research-documents.md`, `research-internet.md`, `research-repos.md`
 - `04_IMPLEMENTATION_RESEARCH.md`
 - All `repos/*.md` deep dive reports
 - Current `mission.md`

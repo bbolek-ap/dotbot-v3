@@ -1,20 +1,31 @@
-# Research Methodology: Atlassian Scan
+# Research Methodology: Deep Atlassian Research
 
-## Objective: Generate `00_CURRENT_STATUS.md`
+## Objective: Download Documents & Generate `research-documents.md`
 
-You are a Research AI Agent with access to Jira and Confluence via the Atlassian MCP server.
+You are a Research AI Agent with access to Jira and Confluence via the Atlassian MCP server and the `atlassian_download` MCP tool.
 
-Your task is to conduct a comprehensive scan of all available information related to the initiative and produce a structured current status report saved as:
+The following tools were loaded in Phase 0 and are ready to use:
+- `mcp__atlassian__getJiraIssue` — read Jira ticket details
+- `mcp__atlassian__searchJiraIssuesUsingJql` — search Jira with JQL
+- `mcp__atlassian__searchConfluenceUsingCql` — search Confluence with CQL
+- `mcp__atlassian__getConfluencePage` — read Confluence page content
+- `mcp__dotbot__atlassian_download` — bulk download attachments
 
-`.bot/workspace/product/briefing/00_CURRENT_STATUS.md`
+Dotbot task management tools were also loaded in Phase 0. Do not call ToolSearch during research.
 
-This report must reflect the actual current state of the initiative based on tickets, documentation, and conversations — not assumptions.
+Your task has two parts:
+1. **Download** all relevant attachments from Jira issues and Confluence pages to `briefing/docs/` using the `atlassian_download` tool
+2. **Produce** a structured document index with content summaries and relevance scores saved as:
+
+`.bot/workspace/product/research-documents.md`
+
+This document index must catalogue every downloaded file with a summary of its contents and a relevance score (1-10).
 
 You are strictly prohibited from using emojis in the report.
 
 ## Initiative Context
 
-Read `.bot/workspace/product/briefing/initiative.md` for all initiative context including:
+Read `.bot/workspace/product/briefing/jira-context.md` for all initiative context including:
 - **Jira Key** — use this as the primary search term
 - **Initiative Name** — use as secondary search term
 - **Business Objective** — understand the scope
@@ -124,7 +135,7 @@ Flag:
 
 You must generate:
 
-`.bot/workspace/product/briefing/00_CURRENT_STATUS.md`
+`.bot/workspace/product/research-documents.md`
 
 Use the following mandatory structure:
 
@@ -286,6 +297,16 @@ Concrete next steps:
 
 ---
 
+# Context Management
+
+To avoid context window exhaustion during research:
+- **Summarize immediately**: After reading any Jira issue or Confluence page, extract key facts into bullet points. Do NOT retain raw API response data in your working context.
+- **Use agents for bulk reads**: When processing multiple Confluence pages or Jira issues, spawn sub-agents to summarize each one independently.
+- **Write incrementally**: Build the output file section-by-section. Write completed sections to disk before moving to the next research area.
+- **Limit Confluence page reads**: When fetching Confluence pages, request only the body content, not comments or metadata, unless comments are specifically relevant to the analysis.
+
+---
+
 # Research Standards
 
 - Do not assume.
@@ -310,14 +331,51 @@ Concrete next steps:
 
 ---
 
+# Step 0: Download All Attachments
+
+Before beginning the analysis, download all Jira and Confluence attachments:
+
+```
+mcp__dotbot__atlassian_download({ jira_key: "{JIRA_KEY}" })
+```
+
+This will download all attachments from the main issue, child issues, and linked Confluence pages to `briefing/docs/`.
+
+After downloading, read each file to understand its contents for the document index.
+
 # Deliverable
 
-Output must be a single Markdown file:
+You must produce TWO outputs:
 
-`.bot/workspace/product/briefing/00_CURRENT_STATUS.md`
+## 1. Downloaded files in `briefing/docs/`
+
+Downloaded via the `atlassian_download` tool. Files are named `{JIRA_KEY}_{Topic}_{Filename}`.
+
+## 2. Document index: `.bot/workspace/product/research-documents.md`
+
+A structured index of all downloaded and discovered documents:
+
+```markdown
+# Research Documents
+
+## Document Index
+
+| # | Relative Path | Source | Content Summary | Relevance (1-10) |
+|---|---------------|--------|-----------------|-------------------|
+| 1 | briefing/docs/BS-9817_Main_spec.pdf | jira-attachment | Technical specification for... | 9 |
+| 2 | briefing/docs/BS-9817_Design_arch.png | confluence-attachment | Architecture diagram showing... | 7 |
+
+## Key Findings
+
+(Extracted insights from reviewing all documents)
+
+## Contradictions and Gaps
+
+(Cross-document contradictions, missing documentation, stale content)
+```
 
 Well-structured, professionally formatted, and suitable for leadership review.
 
-Do not include research logs. Only include the final structured report.
+Do not include research logs. Only include the final structured document index.
 
-If information is incomplete, still produce the report and clearly indicate uncertainty areas.
+If some files cannot be read (e.g., binary formats), note their existence and metadata in the index.

@@ -10,7 +10,7 @@ Post research findings and implementation plans to Atlassian (Jira + Confluence)
 
 ## Prerequisites
 
-- `initiative.md` must exist with Jira key and Atlassian context
+- `jira-context.md` must exist with Jira key and Atlassian context
 - Research artifacts should exist (00-02 at minimum)
 - Atlassian MCP server must be available
 - Implementation research (04) and plans are recommended but not required
@@ -21,7 +21,7 @@ Post research findings and implementation plans to Atlassian (Jira + Confluence)
 
 ```
 read_files({ files: [
-  { path: ".bot/workspace/product/briefing/initiative.md" },
+  { path: ".bot/workspace/product/briefing/jira-context.md" },
   { path: ".bot/workspace/product/mission.md" }
 ]})
 ```
@@ -53,7 +53,7 @@ mcp__atlassian__addCommentToJiraIssue({
 
 **2b. Create sub-tasks for each affected repo** (if they don't exist):
 
-For each MEDIUM+ impact repo from `02_REPOS_AFFECTED.md`:
+For each MEDIUM+ impact repo from `research-repos.md`:
 ```
 mcp__atlassian__createJiraIssue({
   projectKey: "{PROJECT_KEY}",
