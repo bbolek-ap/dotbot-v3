@@ -135,7 +135,15 @@ function Invoke-TaskCreate {
         updated_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
         completed_at = $null
     }
-    
+
+    # Passthrough: preserve extra/custom fields from input (e.g., research_prompt, external_repo)
+    $reservedFields = @('id', 'status', 'created_at', 'updated_at', 'completed_at')
+    foreach ($key in $Arguments.Keys) {
+        if (-not $task.ContainsKey($key) -and $key -notin $reservedFields) {
+            $task[$key] = $Arguments[$key]
+        }
+    }
+
     # Define file path
     $tasksDir = Join-Path $global:DotbotProjectRoot ".bot\workspace\tasks\todo"
     

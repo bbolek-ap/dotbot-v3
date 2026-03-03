@@ -103,6 +103,9 @@ function Invoke-TaskGetNext {
             file_path = $nextTask.file_path
             needs_interview = $nextTask.needs_interview
             questions_resolved = $nextTask.questions_resolved
+            working_dir = $nextTask.working_dir
+            external_repo = $nextTask.external_repo
+            research_prompt = $nextTask.research_prompt
         }
     } else {
         $taskObj = @{

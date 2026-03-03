@@ -157,6 +157,7 @@ function Invoke-TaskCreateBulk {
                 steps = $steps
                 applicable_standards = $applicableStandards
                 applicable_agents = $applicableAgents
+                needs_interview = ($task.needs_interview -eq $true)
                 group_id = $task.group_id
                 human_hours = $task.human_hours
                 ai_hours = $task.ai_hours
@@ -165,7 +166,17 @@ function Invoke-TaskCreateBulk {
                 updated_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
                 completed_at = $null
             }
-            
+
+            # Passthrough: preserve extra/custom fields from input (e.g., research_prompt, external_repo)
+            $reservedFields = @('id', 'status', 'created_at', 'updated_at', 'completed_at')
+            # Use .Keys for dictionary entries; skip .NET internal properties from OrderedDictionary
+            $dictKeys = if ($task -is [System.Collections.IDictionary]) { $task.Keys } else { $task.PSObject.Properties.Name }
+            foreach ($key in $dictKeys) {
+                if (-not $newTask.ContainsKey($key) -and $key -notin $reservedFields) {
+                    $newTask[$key] = $task[$key]
+                }
+            }
+
             # Create filename from name (sanitized)
             $fileName = ($task.name -replace '[^\w\s-]', '' -replace '\s+', '-').ToLower()
             if ($fileName.Length -gt 50) {
