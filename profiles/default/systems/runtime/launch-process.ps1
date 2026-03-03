@@ -1142,7 +1142,12 @@ elseif ($Type -eq 'workflow') {
 
             # Use analysis model from settings
             $analysisModel = if ($settings.analysis?.model) { $settings.analysis.model }  else { $providerConfig.default_model }
-            $analysisModelName = Resolve-ProviderModelId -ModelAlias $analysisModel
+            try {
+                $analysisModelName = Resolve-ProviderModelId -ModelAlias $analysisModel
+            } catch {
+                Write-Warning "Model '$analysisModel' not valid for active provider. Falling back to '$($providerConfig.default_model)'."
+                $analysisModelName = Resolve-ProviderModelId -ModelAlias $providerConfig.default_model
+            }
 
             $fullAnalysisPrompt = @"
 $analysisPrompt
@@ -1322,7 +1327,12 @@ Do NOT implement the task. Your job is research and preparation only.
 
             # Use execution model from settings
             $executionModel = if ($settings.execution?.model) { $settings.execution.model } else { $providerConfig.default_model }
-            $executionModelName = Resolve-ProviderModelId -ModelAlias $executionModel
+            try {
+                $executionModelName = Resolve-ProviderModelId -ModelAlias $executionModel
+            } catch {
+                Write-Warning "Model '$executionModel' not valid for active provider. Falling back to '$($providerConfig.default_model)'."
+                $executionModelName = Resolve-ProviderModelId -ModelAlias $providerConfig.default_model
+            }
 
             # Build execution prompt
             $executionPrompt = Build-TaskPrompt `
@@ -1635,8 +1645,13 @@ elseif ($Type -eq 'kickstart') {
             $questionsPath = Join-Path $productDir "clarification-questions.json"
             $summaryPath = Join-Path $productDir "interview-summary.md"
 
-            # Use Opus for interview quality
-            $interviewModel = Resolve-ProviderModelId -ModelAlias 'Opus'
+            # Use best-quality model for interview
+            try {
+                $interviewModel = Resolve-ProviderModelId -ModelAlias 'Opus'
+            } catch {
+                Write-Warning "Model 'Opus' not valid for active provider. Falling back to '$($providerConfig.default_model)'."
+                $interviewModel = Resolve-ProviderModelId -ModelAlias $providerConfig.default_model
+            }
 
             do {
                 $interviewRound++
