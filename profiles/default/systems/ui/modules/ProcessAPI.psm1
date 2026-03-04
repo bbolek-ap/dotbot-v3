@@ -38,7 +38,7 @@ function Get-ProcessList {
 
     foreach ($pf in $processFiles) {
         try {
-            $proc = Get-Content $pf.FullName -Raw | ConvertFrom-Json
+            $proc = Get-Content $pf.FullName -Raw -ErrorAction Stop | ConvertFrom-Json
 
             # TTL cleanup: remove failed/stopped processes older than 5 minutes
             if ($proc.status -in @('failed', 'stopped') -and $proc.failed_at) {
@@ -63,7 +63,7 @@ function Get-ProcessList {
                     $proc.status = 'stopped'
                     $proc.failed_at = $now.ToString("o")
                     $proc | Add-Member -NotePropertyName 'error' -NotePropertyValue "Process terminated unexpectedly" -Force
-                    $proc | ConvertTo-Json -Depth 10 | Set-Content -Path $pf.FullName -Force
+                    $proc | ConvertTo-Json -Depth 10 | Set-Content -Path $pf.FullName -Force -ErrorAction Stop
 
                     # Write activity log so the PROCESSES tab output shows what happened
                     $actFile = Join-Path $processesDir "$($proc.id).activity.jsonl"
@@ -178,7 +178,7 @@ function Stop-ProcessByType {
     $procFiles = Get-ChildItem -Path $processesDir -Filter "*.json" -File -ErrorAction SilentlyContinue
     foreach ($pf in $procFiles) {
         try {
-            $pData = Get-Content $pf.FullName -Raw | ConvertFrom-Json
+            $pData = Get-Content $pf.FullName -Raw -ErrorAction Stop | ConvertFrom-Json
             if ($pData.type -eq $Type -and ($pData.status -eq "running" -or $pData.status -eq "starting")) {
                 $stopFile = Join-Path $processesDir "$($pData.id).stop"
                 "stop" | Set-Content -Path $stopFile -Force
@@ -201,7 +201,7 @@ function Stop-ManagedProcessByType {
     $procFiles = Get-ChildItem -Path $processesDir -Filter "*.json" -File -ErrorAction SilentlyContinue
     foreach ($pf in $procFiles) {
         try {
-            $pData = Get-Content $pf.FullName -Raw | ConvertFrom-Json
+            $pData = Get-Content $pf.FullName -Raw -ErrorAction Stop | ConvertFrom-Json
             if ($pData.type -eq $Type -and ($pData.status -eq "running" -or $pData.status -eq "starting")) {
                 if ($pData.pid) {
                     Stop-Process -Id $pData.pid -Force -ErrorAction SilentlyContinue
@@ -227,7 +227,7 @@ function Stop-AllManagedProcesses {
     $procFiles = Get-ChildItem -Path $processesDir -Filter "*.json" -File -ErrorAction SilentlyContinue
     foreach ($pf in $procFiles) {
         try {
-            $pData = Get-Content $pf.FullName -Raw | ConvertFrom-Json
+            $pData = Get-Content $pf.FullName -Raw -ErrorAction Stop | ConvertFrom-Json
             if ($pData.status -eq "running" -or $pData.status -eq "starting") {
                 if ($pData.pid) {
                     Stop-Process -Id $pData.pid -Force -ErrorAction SilentlyContinue
@@ -338,7 +338,7 @@ function Start-ProcessLaunch {
     $launchedProcId = $null
     foreach ($pf in $procFiles) {
         try {
-            $pData = Get-Content $pf.FullName -Raw | ConvertFrom-Json
+            $pData = Get-Content $pf.FullName -Raw -ErrorAction Stop | ConvertFrom-Json
             if ($pData.pid -eq $proc.Id) {
                 $launchedProcId = $pData.id
                 break

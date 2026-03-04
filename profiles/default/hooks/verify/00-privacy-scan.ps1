@@ -38,7 +38,11 @@ $excludePatterns = @(
     '\.vs[/\\]',
     'bin[/\\]',
     'obj[/\\]',
-    '\.bot[/\\]\.control[/\\]'
+    '\.bot[/\\]\.control[/\\]',
+    '\.bot[/\\]hooks[/\\]',
+    '\.bot[/\\]systems[/\\]',
+    '\.bot[/\\]defaults[/\\]',
+    '\.bot[/\\]prompts[/\\]'
 )
 
 # Binary extensions to skip

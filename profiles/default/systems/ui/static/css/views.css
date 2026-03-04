@@ -1167,6 +1167,147 @@
     display: none;
 }
 
+/* Kickstart Phase Tracking */
+.kickstart-phases {
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--primary-12);
+    padding-bottom: 12px;
+}
+
+.kickstart-phases.collapsed .chain-layer-items {
+    display: none;
+}
+
+.kickstart-phase-item {
+    cursor: default;
+}
+
+.kickstart-phase-item .phase-icon {
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    flex-shrink: 0;
+    border-radius: 3px;
+}
+
+.kickstart-phase-completed .phase-icon {
+    color: var(--color-success);
+}
+
+.kickstart-phase-running .phase-icon {
+    color: var(--color-primary);
+    animation: pulse-phase 1.5s ease-in-out infinite;
+}
+
+.kickstart-phase-failed .phase-icon {
+    color: var(--color-error);
+}
+
+.kickstart-phase-skipped .phase-icon {
+    color: var(--color-primary-dim);
+    opacity: 0.4;
+}
+
+.kickstart-phase-pending .phase-icon {
+    color: var(--color-primary-dim);
+    opacity: 0.4;
+}
+
+.kickstart-phase-incomplete .phase-icon {
+    color: var(--color-warning);
+}
+
+@keyframes pulse-phase {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+.kickstart-resume-row {
+    padding: 8px 10px 4px;
+}
+
+.kickstart-resume-btn {
+    width: 100%;
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px solid var(--color-primary);
+    color: var(--color-primary);
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s ease;
+}
+
+.kickstart-resume-btn:hover {
+    background: var(--primary-15);
+}
+
+/* Kickstart Phases — Overview side panel */
+.overview-layout {
+    display: flex;
+    height: 100%;
+    gap: 1rem;
+}
+
+.overview-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.overview-side-panel {
+    width: 260px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--primary-20);
+    background: var(--bg-panel);
+    border-radius: 4px;
+    overflow: hidden;
+    align-self: flex-start;
+}
+
+.overview-side-header {
+    padding: 12px 14px;
+    background: var(--bezel-dark);
+    border-bottom: 1px solid var(--bezel-edge);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+    font-family: var(--font-ui);
+    cursor: pointer;
+    user-select: none;
+}
+
+.overview-side-header:hover {
+    background: var(--primary-12);
+}
+
+.overview-side-content {
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.overview-side-panel.collapsed .overview-side-content {
+    display: none;
+}
+
+.overview-side-panel .kickstart-phases {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
 /* ========== SETTINGS TAB ========== */
 .settings-container {
     max-width: 800px;

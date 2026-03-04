@@ -235,6 +235,7 @@ body::after {
     flex: 1;
     min-width: 0;
     word-break: break-word;
+    white-space: pre-line;
 }
 
 .toast-close {

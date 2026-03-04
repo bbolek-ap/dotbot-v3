@@ -98,7 +98,9 @@ function Remove-ProviderSession {
     # Determine active provider
     $providerName = 'claude'
     try {
-        Import-Module (Join-Path $PSScriptRoot '..\ProviderCLI\ProviderCLI.psm1') -Force
+        if (-not (Get-Module ProviderCLI)) {
+            Import-Module (Join-Path $PSScriptRoot '..\ProviderCLI\ProviderCLI.psm1') -Force
+        }
         $config = Get-ProviderConfig
         $providerName = $config.name
     } catch {}
@@ -166,7 +168,9 @@ function Clear-OldProviderSessions {
     # Determine active provider
     $providerName = 'claude'
     try {
-        Import-Module (Join-Path $PSScriptRoot '..\ProviderCLI\ProviderCLI.psm1') -Force
+        if (-not (Get-Module ProviderCLI)) {
+            Import-Module (Join-Path $PSScriptRoot '..\ProviderCLI\ProviderCLI.psm1') -Force
+        }
         $config = Get-ProviderConfig
         $providerName = $config.name
     } catch {}

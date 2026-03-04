@@ -114,7 +114,7 @@ function Build-TaskPrompt {
     $prompt = $prompt -replace '\{\{QUESTIONS_RESOLVED\}\}', $questionsResolved
 
     # Add steering protocol include
-    $steeringProtocolPath = Join-Path $PSScriptRoot "..\..\prompts\workflows\06-steering-protocol.include.md"
+    $steeringProtocolPath = Join-Path $PSScriptRoot "..\..\prompts\workflows\92-steering-protocol.include.md"
     $steeringProtocol = ""
     if (Test-Path $steeringProtocolPath) {
         $steeringProtocol = Get-Content $steeringProtocolPath -Raw -ErrorAction SilentlyContinue

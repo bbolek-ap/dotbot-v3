@@ -31,10 +31,7 @@
             <div class="system-id">
                 <span class="logo">◈ DOTBOT</span>
                 <span class="project-badge" id="project-name">autonomous</span>
-                <button class="editor-btn dimmed" id="editor-btn" title="Configure editor" aria-label="Configure editor">
-                    <span class="editor-btn-icon" id="editor-btn-icon"></span>
-                    <span class="editor-btn-label" id="editor-btn-label"></span>
-                </button>
+                <span class="profile-pill" id="profile-pill"></span>
             </div>
             <div class="header-signals">
                 <div class="signal">
@@ -63,9 +60,9 @@
                     <button class="tab" data-tab="workflow">Workflow</button>
                     <button class="tab" data-tab="settings">Settings</button>
                 </div>
-                <button class="tab-action" id="whisper-btn">
-                    <span class="whisper-icon"></span>
-                    <span>WHISPER</span>
+                <button class="editor-btn dimmed" id="editor-btn" title="Configure editor" aria-label="Configure editor">
+                    <span class="editor-btn-icon" id="editor-btn-icon"></span>
+                    <span class="editor-btn-label" id="editor-btn-label"></span>
                 </button>
             </div>
         </div>
@@ -341,6 +338,8 @@
                 <div class="tab-content">
                     <!-- Overview Tab -->
                     <div class="tab-pane active" id="tab-overview">
+                      <div class="overview-layout">
+                        <div class="overview-content">
                         <!-- Executive Summary -->
                         <div class="executive-summary" id="executive-summary" style="display: none;"></div>
 
@@ -451,6 +450,16 @@
                                 </div>
                             </div>
                         </div>
+                        </div><!-- /.overview-content -->
+                        <div class="overview-side-panel" id="overview-side-panel" style="display: none;">
+                            <div class="overview-side-header" id="overview-side-toggle">
+                                ◈ Kickstart Progress
+                            </div>
+                            <div class="overview-side-content" id="overview-side-content">
+                                <div id="overview-kickstart-phases"></div>
+                            </div>
+                        </div>
+                      </div><!-- /.overview-layout -->
                     </div>
 
                     <!-- Pipeline Tab -->
@@ -1189,41 +1198,67 @@
                 <button class="modal-close" id="kickstart-modal-close"><!-- Close icon loaded dynamically --></button>
             </div>
             <div class="modal-body">
-                <div class="task-create-form">
-                    <div class="form-group">
-                        <label class="form-label">Describe your project</label>
-                        <textarea class="form-textarea" id="kickstart-prompt" placeholder="What are you building? What problem does it solve? What technologies are you using?" rows="6"></textarea>
-                    </div>
-                    <div class="form-hint">
-                        Claude will create your mission, tech stack, and entity model documents based on your description and any attached files.
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Attach context files (optional)</label>
-                        <div class="kickstart-dropzone" id="kickstart-dropzone">
-                            <div class="dropzone-content">
-                                <div class="dropzone-icon">◇</div>
-                                <div class="dropzone-text">Drop files here or click to browse</div>
-                                <div class="dropzone-hint">Any file type and size</div>
-                            </div>
+                <!-- Phase 1: Form -->
+                <div class="kickstart-phase" id="kickstart-phase-form">
+                    <div class="task-create-form">
+                        <div class="form-group">
+                            <label class="form-label">Describe your project</label>
+                            <textarea class="form-textarea" id="kickstart-prompt" placeholder="What are you building? What problem does it solve? What technologies are you using?" rows="6"></textarea>
                         </div>
-                        <input type="file" id="kickstart-file-input" style="display: none;" multiple>
-                        <div id="kickstart-file-list" class="kickstart-file-list"></div>
+                        <div class="form-hint" id="kickstart-description">
+                            Claude will create your mission, tech stack, and entity model documents based on your description and any attached files.
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Attach context files (optional)</label>
+                            <div class="kickstart-dropzone" id="kickstart-dropzone">
+                                <div class="dropzone-content">
+                                    <div class="dropzone-icon">◇</div>
+                                    <div class="dropzone-text">Drop files here or click to browse</div>
+                                    <div class="dropzone-hint">Any file type and size</div>
+                                </div>
+                            </div>
+                            <input type="file" id="kickstart-file-input" style="display: none;" multiple>
+                            <div id="kickstart-file-list" class="kickstart-file-list"></div>
+                        </div>
+                        <div class="form-option">
+                            <label class="form-checkbox-label">
+                                <input type="checkbox" id="kickstart-interview" checked>
+                                <span class="form-checkbox-text" id="kickstart-interview-label">Interview me to clarify requirements</span>
+                            </label>
+                            <div class="form-option-hint" id="kickstart-interview-hint">Dotbot will ask clarifying questions before creating product documents</div>
+                        </div>
+                        <div class="form-option">
+                            <label class="form-checkbox-label">
+                                <input type="checkbox" id="kickstart-auto-workflow" checked>
+                                <span class="form-checkbox-text" id="kickstart-auto-workflow-label">Auto-execute created tasks</span>
+                            </label>
+                            <div class="form-option-hint" id="kickstart-auto-workflow-hint">Automatically analyse and execute tasks after kickstart creates them</div>
+                        </div>
                     </div>
-                    <div class="form-option">
-                        <label class="form-checkbox-label">
-                            <input type="checkbox" id="kickstart-interview" checked>
-                            <span class="form-checkbox-text">Interview me to clarify requirements</span>
-                        </label>
-                        <div class="form-option-hint">Dotbot will ask clarifying questions before creating product documents</div>
+                </div>
+                <!-- Phase 2: Preflight -->
+                <div class="kickstart-phase hidden" id="kickstart-phase-preflight">
+                    <div class="preflight-panel">
+                        <div class="preflight-header">
+                            <span class="preflight-title">PRE-FLIGHT SYSTEMS CHECK</span>
+                        </div>
+                        <div class="preflight-checklist" id="preflight-checklist"></div>
+                        <div class="preflight-footer" id="preflight-footer"></div>
                     </div>
                 </div>
             </div>
-            <div class="modal-footer task-create-footer">
+            <!-- Footer: Form phase -->
+            <div class="modal-footer task-create-footer" id="kickstart-footer-form">
                 <button class="ctrl-btn" id="kickstart-cancel">Cancel</button>
                 <button class="ctrl-btn primary" id="kickstart-submit">
                     <span class="btn-text">Kickstart</span>
                     <span class="btn-loading" style="display: none;">Starting...</span>
                 </button>
+            </div>
+            <!-- Footer: Preflight phase -->
+            <div class="modal-footer task-create-footer hidden" id="kickstart-footer-preflight">
+                <button class="ctrl-btn" id="kickstart-preflight-back">Back</button>
+                <button class="ctrl-btn primary hidden" id="kickstart-preflight-retry">Retry</button>
             </div>
         </div>
     </div>

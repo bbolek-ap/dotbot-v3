@@ -121,6 +121,7 @@ try {
     # CLI wrapper contains expected commands
     if (Test-Path $cliScript) {
         Assert-FileContains -Name "CLI has 'init' command" -Path $cliScript -Pattern "init"
+        Assert-FileContains -Name "CLI has 'profiles' command" -Path $cliScript -Pattern "profiles"
         Assert-FileContains -Name "CLI has 'status' command" -Path $cliScript -Pattern "status"
         Assert-FileContains -Name "CLI has 'help' command" -Path $cliScript -Pattern "help"
     }
@@ -244,6 +245,12 @@ if (-not $dotbotInstalled) {
         $dummyFile = Join-Path $botDir2 "workspace\tasks\todo\test-task.json"
         @{ id = "test-123"; name = "Dummy task" } | ConvertTo-Json | Set-Content -Path $dummyFile
 
+        # Create a dummy settings file in .control to verify preservation
+        $controlDir = Join-Path $botDir2 ".control"
+        if (-not (Test-Path $controlDir)) { New-Item -Path $controlDir -ItemType Directory -Force | Out-Null }
+        $dummySettings = Join-Path $controlDir "settings.json"
+        @{ anthropic_api_key = "sk-test-dummy" } | ConvertTo-Json | Set-Content -Path $dummySettings
+
         # Re-init with -Force
         Push-Location $testProject2
         & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dotbotDir "scripts\init-project.ps1") -Force 2>&1 | Out-Null
@@ -251,6 +258,7 @@ if (-not $dotbotInstalled) {
 
         Assert-PathExists -Name "-Force: .bot still exists" -Path $botDir2
         Assert-PathExists -Name "-Force: workspace task preserved" -Path $dummyFile
+        Assert-PathExists -Name "-Force: .control/settings.json preserved" -Path $dummySettings
         Assert-PathExists -Name "-Force: system files refreshed" -Path (Join-Path $botDir2 "systems\mcp\dotbot-mcp.ps1")
 
     } finally {
@@ -259,7 +267,7 @@ if (-not $dotbotInstalled) {
 
     # --- Init with -Profile dotnet ---
     Write-Host ""
-    Write-Host "  INIT -PROFILE" -ForegroundColor Cyan
+    Write-Host "  INIT -PROFILE (single stack)" -ForegroundColor Cyan
     Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
 
     $dotnetProfile = Join-Path $dotbotDir "profiles\dotnet"
@@ -274,8 +282,8 @@ if (-not $dotbotInstalled) {
             Assert-PathExists -Name "-Profile: .bot created with dotnet profile" -Path $botDir3
 
             # Check that dotnet-specific files exist (look for any file from the dotnet profile)
-            # Exclude profile-init.ps1 which is intentionally not copied (it runs once during init)
-            $dotnetFiles = Get-ChildItem -Path $dotnetProfile -Recurse -File | Where-Object { $_.Name -ne "profile-init.ps1" }
+            # Exclude profile-init.ps1 and profile.yaml which are intentionally not copied
+            $dotnetFiles = Get-ChildItem -Path $dotnetProfile -Recurse -File | Where-Object { $_.Name -ne "profile-init.ps1" -and $_.Name -ne "profile.yaml" }
             if ($dotnetFiles.Count -gt 0) {
                 $firstFile = $dotnetFiles[0]
                 $relativePath = $firstFile.FullName.Substring($dotnetProfile.Length + 1)
@@ -289,6 +297,230 @@ if (-not $dotbotInstalled) {
     } else {
         Write-TestResult -Name "-Profile dotnet tests" -Status Skip -Message "dotnet profile not found at $dotnetProfile"
     }
+
+    # --- Init with -Profile multi-repo,dotnet-blazor (taxonomy + extends) ---
+    Write-Host ""
+    Write-Host "  INIT -PROFILE (workflow + stack with extends)" -ForegroundColor Cyan
+    Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+    $multiRepoProfile = Join-Path $dotbotDir "profiles\multi-repo"
+    $dotnetBlazorProfile = Join-Path $dotbotDir "profiles\dotnet-blazor"
+    if ((Test-Path $multiRepoProfile) -and (Test-Path $dotnetBlazorProfile)) {
+        $testProjectCombo = New-TestProject
+        try {
+            Push-Location $testProjectCombo
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dotbotDir "scripts\init-project.ps1") -Profile "multi-repo,dotnet-blazor" 2>&1 | Out-Null
+            Pop-Location
+
+            $botDirCombo = Join-Path $testProjectCombo ".bot"
+            Assert-PathExists -Name "Combo: .bot created" -Path $botDirCombo
+
+            # Multi-repo overlay applied (workflow override)
+            Assert-PathExists -Name "Combo: multi-repo 98-analyse-task.md present" `
+                -Path (Join-Path $botDirCombo "prompts\workflows\98-analyse-task.md")
+
+            # dotnet auto-included via extends (dotnet-blazor extends dotnet)
+            $dotnetSkillCheck = Join-Path $botDirCombo "prompts\skills\entity-design\SKILL.md"
+            Assert-PathExists -Name "Combo: dotnet auto-included (entity-design skill)" -Path $dotnetSkillCheck
+
+            # dotnet-blazor overlay applied
+            $blazorSkillCheck = Join-Path $botDirCombo "prompts\skills\blazor-component-design\SKILL.md"
+            Assert-PathExists -Name "Combo: dotnet-blazor skill present" -Path $blazorSkillCheck
+
+            # Settings: profile should be 'multi-repo' and stacks should include dotnet + dotnet-blazor
+            $settingsCombo = Join-Path $botDirCombo "defaults\settings.default.json"
+            if (Test-Path $settingsCombo) {
+                $sCombo = Get-Content $settingsCombo -Raw | ConvertFrom-Json
+                Assert-Equal -Name "Combo: profile is 'multi-repo'" `
+                    -Expected "multi-repo" -Actual $sCombo.profile
+                Assert-True -Name "Combo: stacks includes 'dotnet'" `
+                    -Condition ("dotnet" -in @($sCombo.stacks)) `
+                    -Message "Expected 'dotnet' in stacks array, got: $($sCombo.stacks -join ', ')"
+                Assert-True -Name "Combo: stacks includes 'dotnet-blazor'" `
+                    -Condition ("dotnet-blazor" -in @($sCombo.stacks)) `
+                    -Message "Expected 'dotnet-blazor' in stacks array, got: $($sCombo.stacks -join ', ')"
+            }
+
+            # profile.yaml should NOT be copied to .bot/
+            Assert-PathNotExists -Name "Combo: profile.yaml not copied" `
+                -Path (Join-Path $botDirCombo "profile.yaml")
+
+        } finally {
+            Remove-TestProject -Path $testProjectCombo
+        }
+    } else {
+        Write-TestResult -Name "Combo profile tests" -Status Skip -Message "Required profiles not found"
+    }
+
+    # --- Init with -Profile multi-repo ---
+    Write-Host ""
+    Write-Host "  INIT -PROFILE multi-repo" -ForegroundColor Cyan
+    Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+    $multiRepoProfile = Join-Path $dotbotDir "profiles\multi-repo"
+    if (Test-Path $multiRepoProfile) {
+        $testProject4 = New-TestProject
+        try {
+            Push-Location $testProject4
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dotbotDir "scripts\init-project.ps1") -Profile multi-repo 2>&1 | Out-Null
+            Pop-Location
+
+            $botDir4 = Join-Path $testProject4 ".bot"
+            Assert-PathExists -Name "-Profile multi-repo: .bot created" -Path $botDir4
+
+            # Key overlay files
+            Assert-PathExists -Name "-Profile multi-repo: 98-analyse-task.md (override)" `
+                -Path (Join-Path $botDir4 "prompts\workflows\98-analyse-task.md")
+            Assert-PathExists -Name "-Profile multi-repo: 00-kickstart-interview.md (override)" `
+                -Path (Join-Path $botDir4 "prompts\workflows\00-kickstart-interview.md")
+            Assert-PathExists -Name "-Profile multi-repo: 05-post-research-review.md (new)" `
+                -Path (Join-Path $botDir4 "prompts\workflows\05-post-research-review.md")
+            Assert-PathExists -Name "-Profile multi-repo: atlassian.md (new research dir)" `
+                -Path (Join-Path $botDir4 "prompts\research\atlassian.md")
+            Assert-PathExists -Name "-Profile multi-repo: repo-clone/script.ps1 (new tool)" `
+                -Path (Join-Path $botDir4 "systems\mcp\tools\repo-clone\script.ps1")
+            Assert-PathExists -Name "-Profile multi-repo: settings.default.json (replacement)" `
+                -Path (Join-Path $botDir4 "defaults\settings.default.json")
+
+            # profile-init.ps1 should NOT be copied to .bot/
+            Assert-PathNotExists -Name "-Profile multi-repo: profile-init.ps1 not copied" `
+                -Path (Join-Path $botDir4 "profile-init.ps1")
+
+            # Verify hook config merge: 03-research-completeness.ps1 present
+            $verifyConfig4 = Join-Path $botDir4 "hooks\verify\config.json"
+            Assert-ValidJson -Name "-Profile multi-repo: verify config.json is valid JSON" -Path $verifyConfig4
+            if (Test-Path $verifyConfig4) {
+                $config4 = Get-Content $verifyConfig4 -Raw | ConvertFrom-Json
+                $scriptNames4 = $config4.scripts | ForEach-Object { $_.name }
+                Assert-True -Name "-Profile multi-repo: verify config has 03-research-completeness.ps1" `
+                    -Condition ("03-research-completeness.ps1" -in $scriptNames4) `
+                    -Message "03-research-completeness.ps1 not found in merged config"
+            }
+
+            # Settings validation
+            $settingsPath4 = Join-Path $botDir4 "defaults\settings.default.json"
+            Assert-ValidJson -Name "-Profile multi-repo: settings is valid JSON" -Path $settingsPath4
+            if (Test-Path $settingsPath4) {
+                $settings4 = Get-Content $settingsPath4 -Raw | ConvertFrom-Json
+
+                Assert-True -Name "-Profile multi-repo: task_categories has 5 values" `
+                    -Condition ($settings4.task_categories.Count -eq 5) `
+                    -Message "Expected 5 categories, got $($settings4.task_categories.Count)"
+
+                Assert-Equal -Name "-Profile multi-repo: branch_prefix is 'initiative'" `
+                    -Expected "initiative" -Actual $settings4.azure_devops.branch_prefix
+
+                Assert-Equal -Name "-Profile multi-repo: max_pages_to_read is 10" `
+                    -Expected 10 -Actual $settings4.atlassian.max_pages_to_read
+
+                # Verify kickstart phases include jira-context as first phase
+                $phaseIds = $settings4.kickstart.phases | ForEach-Object { $_.id }
+                Assert-Equal -Name "-Profile multi-repo: first phase is 'jira-context'" `
+                    -Expected "jira-context" -Actual $phaseIds[0]
+
+                # Verify post-research-review phase exists as LLM type (not interview)
+                $reviewPhase = $settings4.kickstart.phases | Where-Object { $_.id -eq 'post-research-review' }
+                Assert-True -Name "-Profile multi-repo: post-research-review phase exists" `
+                    -Condition ($null -ne $reviewPhase) `
+                    -Message "post-research-review phase not found in kickstart.phases"
+                if ($reviewPhase) {
+                    Assert-Equal -Name "-Profile multi-repo: post-research-review type is 'llm'" `
+                        -Expected "llm" -Actual $reviewPhase.type
+                }
+            }
+
+            # Sample task JSONs are valid
+            $samplesDir4 = Join-Path $botDir4 "workspace\tasks\samples"
+            if (Test-Path $samplesDir4) {
+                $sampleFiles4 = Get-ChildItem -Path $samplesDir4 -Filter "*.json" -ErrorAction SilentlyContinue
+                foreach ($sample in $sampleFiles4) {
+                    Assert-ValidJson -Name "-Profile multi-repo: sample $($sample.Name) is valid JSON" -Path $sample.FullName
+                }
+            }
+
+            # All .ps1 files in the profile source are valid PowerShell
+            $allPs1Files = Get-ChildItem -Path $multiRepoProfile -Filter "*.ps1" -Recurse
+            foreach ($ps1 in $allPs1Files) {
+                $relPath = $ps1.FullName.Substring($multiRepoProfile.Length + 1)
+                Assert-ValidPowerShell -Name "-Profile multi-repo: $relPath valid syntax" -Path $ps1.FullName
+            }
+
+        } finally {
+            Remove-TestProject -Path $testProject4
+        }
+    } else {
+        Write-TestResult -Name "-Profile multi-repo tests" -Status Skip -Message "multi-repo profile not found at $multiRepoProfile"
+    }
+
+    # --- Verification Hook: 03-research-completeness.ps1 ---
+    Write-Host ""
+    Write-Host "  VERIFICATION HOOK" -ForegroundColor Cyan
+    Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+    $hookScript = Join-Path $dotbotDir "profiles\multi-repo\hooks\verify\03-research-completeness.ps1"
+    if (Test-Path $hookScript) {
+        $testProject5 = New-TestProject
+        try {
+            # Init with multi-repo profile
+            Push-Location $testProject5
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dotbotDir "scripts\init-project.ps1") -Profile multi-repo 2>&1 | Out-Null
+            Pop-Location
+
+            $botDir5 = Join-Path $testProject5 ".bot"
+            $briefingDir5 = Join-Path $botDir5 "workspace\product\briefing"
+            $productDir5 = Join-Path $botDir5 "workspace\product"
+            $hookCopy5 = Join-Path $botDir5 "hooks\verify\03-research-completeness.ps1"
+
+            if (Test-Path $hookCopy5) {
+                # Scenario 1: No artifacts → exit 1 (missing initiative.md)
+                $result1 = & pwsh -NoProfile -ExecutionPolicy Bypass -Command "
+                    `$global:DotbotProjectRoot = '$($testProject5 -replace "'","''")'
+                    & '$($hookCopy5 -replace "'","''")'
+                " 2>&1
+                $exitCode1 = $LASTEXITCODE
+                Assert-Equal -Name "Hook: no artifacts -> exit 1" -Expected 1 -Actual $exitCode1
+
+                # Scenario 2: Only jira-context.md → exit 0 with warnings
+                New-Item -Path $briefingDir5 -ItemType Directory -Force | Out-Null
+                "# Jira Context" | Set-Content (Join-Path $briefingDir5 "jira-context.md")
+
+                $result2 = & pwsh -NoProfile -ExecutionPolicy Bypass -Command "
+                    `$global:DotbotProjectRoot = '$($testProject5 -replace "'","''")'
+                    & '$($hookCopy5 -replace "'","''")'
+                " 2>&1
+                $exitCode2 = $LASTEXITCODE
+                Assert-Equal -Name "Hook: only jira-context.md -> exit 0" -Expected 0 -Actual $exitCode2
+
+                # Scenario 3: All artifacts present → exit 0, success message
+                "# Interview" | Set-Content (Join-Path $productDir5 "interview-summary.md")
+                "# Mission" | Set-Content (Join-Path $productDir5 "mission.md")
+                "# Internet" | Set-Content (Join-Path $productDir5 "research-internet.md")
+                "# Documents" | Set-Content (Join-Path $productDir5 "research-documents.md")
+                "# Repos" | Set-Content (Join-Path $productDir5 "research-repos.md")
+                New-Item -Path (Join-Path $briefingDir5 "repos") -ItemType Directory -Force | Out-Null
+                "# Deep dive" | Set-Content (Join-Path $briefingDir5 "repos\FakeRepo.md")
+
+                $result3 = & pwsh -NoProfile -ExecutionPolicy Bypass -Command "
+                    `$global:DotbotProjectRoot = '$($testProject5 -replace "'","''")'
+                    & '$($hookCopy5 -replace "'","''")'
+                " 2>&1
+                $exitCode3 = $LASTEXITCODE
+                Assert-Equal -Name "Hook: all artifacts -> exit 0" -Expected 0 -Actual $exitCode3
+
+                $output3 = $result3 -join "`n"
+                Assert-True -Name "Hook: all artifacts -> success message" `
+                    -Condition ($output3 -match "All research artifacts present") `
+                    -Message "Expected 'All research artifacts present' in output"
+            } else {
+                Write-TestResult -Name "Hook tests" -Status Skip -Message "Hook not copied to .bot/"
+            }
+
+        } finally {
+            Remove-TestProject -Path $testProject5
+        }
+    } else {
+        Write-TestResult -Name "Verification hook tests" -Status Skip -Message "Hook script not found at $hookScript"
+    }
 }
 
 Write-Host ""
@@ -296,6 +528,43 @@ Write-Host ""
 # ═══════════════════════════════════════════════════════════════════
 # PLATFORM FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════
+# PROFILE TAXONOMY (profile.yaml manifests)
+# ═══════════════════════════════════════════════════════════════════
+
+Write-Host "  PROFILE TAXONOMY" -ForegroundColor Cyan
+Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+$profilesSourceDir = Join-Path $repoRoot "profiles"
+$nonDefaultProfiles = Get-ChildItem -Path $profilesSourceDir -Directory | Where-Object { $_.Name -ne "default" }
+
+foreach ($profileDir in $nonDefaultProfiles) {
+    $yamlPath = Join-Path $profileDir.FullName "profile.yaml"
+    Assert-PathExists -Name "profile.yaml exists: $($profileDir.Name)" -Path $yamlPath
+
+    if (Test-Path $yamlPath) {
+        $content = Get-Content $yamlPath -Raw
+        Assert-True -Name "profile.yaml has 'type': $($profileDir.Name)" `
+            -Condition ($content -match 'type:\s*(workflow|stack)') `
+            -Message "'type' must be 'workflow' or 'stack'"
+        Assert-True -Name "profile.yaml has 'name': $($profileDir.Name)" `
+            -Condition ($content -match 'name:\s*\S+') `
+            -Message "Missing 'name' field"
+        Assert-True -Name "profile.yaml has 'description': $($profileDir.Name)" `
+            -Condition ($content -match 'description:\s*\S+') `
+            -Message "Missing 'description' field"
+
+        # If extends is declared, the parent profile must exist
+        if ($content -match 'extends:\s*(\S+)') {
+            $parentName = $Matches[1]
+            $parentDir = Join-Path $profilesSourceDir $parentName
+            Assert-PathExists -Name "extends target exists: $($profileDir.Name) -> $parentName" -Path $parentDir
+        }
+    }
+}
+
+Write-Host ""
 
 Write-Host "  PLATFORM FUNCTIONS" -ForegroundColor Cyan
 Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray

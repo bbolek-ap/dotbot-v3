@@ -276,7 +276,8 @@ function buildOverviewSection(task) {
             });
         }
         if (task.applicable_standards) {
-            task.applicable_standards.forEach(s => {
+            const standards = Array.isArray(task.applicable_standards) ? task.applicable_standards : [task.applicable_standards];
+            standards.forEach(s => {
                 if (s) html += `<span class="task-tag tag-standard">${escapeHtml(s)}</span>`;
             });
         }
@@ -330,7 +331,8 @@ function buildRequirementsSection(task) {
         html += `<div class="task-list-section">`;
         html += `<div class="task-list-header">Implementation Steps</div>`;
         html += `<ol class="task-numbered-list">`;
-        task.steps.forEach(s => {
+        const stepsArr = Array.isArray(task.steps) ? task.steps : [task.steps];
+        stepsArr.forEach(s => {
             html += `<li>${escapeHtml(s)}</li>`;
         });
         html += `</ol></div>`;
@@ -341,7 +343,8 @@ function buildRequirementsSection(task) {
         html += `<div class="task-list-section">`;
         html += `<div class="task-list-header">Acceptance Criteria</div>`;
         html += `<ul class="task-bullet-list">`;
-        task.acceptance_criteria.forEach(c => {
+        const criteriaArr = Array.isArray(task.acceptance_criteria) ? task.acceptance_criteria : [task.acceptance_criteria];
+        criteriaArr.forEach(c => {
             html += `<li>${escapeHtml(c)}</li>`;
         });
         html += `</ul></div>`;

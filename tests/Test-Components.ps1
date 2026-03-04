@@ -585,6 +585,202 @@ if (Test-Path $pollerModule) {
 Write-Host ""
 
 # ═══════════════════════════════════════════════════════════════════
+# MULTI-REPO PROFILE: TOOL REGISTRATION & CATEGORIES
+# ═══════════════════════════════════════════════════════════════════
+
+Write-Host "  MULTI-REPO TOOL REGISTRATION" -ForegroundColor Cyan
+Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+$multiRepoProfile = Join-Path $dotbotDir "profiles\multi-repo"
+if (Test-Path $multiRepoProfile) {
+    $mrTestProject = New-TestProject
+    $mrBotDir = Join-Path $mrTestProject ".bot"
+
+    Push-Location $mrTestProject
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dotbotDir "scripts\init-project.ps1") -Profile multi-repo 2>&1 | Out-Null
+    & git add -A 2>&1 | Out-Null
+    & git commit -m "dotbot init multi-repo" --quiet 2>&1 | Out-Null
+    Pop-Location
+
+    # Strip verify config to only include scripts that actually exist in the test project
+    $mrVerifyConfig = Join-Path $mrBotDir "hooks\verify\config.json"
+    if (Test-Path $mrVerifyConfig) {
+        try {
+            $vc = Get-Content $mrVerifyConfig -Raw | ConvertFrom-Json
+            $vd = Join-Path $mrBotDir "hooks\verify"
+            $existing = @()
+            foreach ($s in $vc.scripts) {
+                if (Test-Path (Join-Path $vd $s.name)) { $existing += $s }
+            }
+            $vc.scripts = $existing
+            $vc | ConvertTo-Json -Depth 5 | Set-Content -Path $mrVerifyConfig -Encoding UTF8
+        } catch {}
+    }
+
+    $mrMcpProcess = $null
+    $mrRequestId = 0
+
+    try {
+        $mrMcpProcess = Start-McpServer -BotDir $mrBotDir
+        Assert-True -Name "Multi-repo MCP server starts" `
+            -Condition (-not $mrMcpProcess.HasExited) `
+            -Message "Server process exited immediately"
+
+        $mrInitResponse = Send-McpInitialize -Process $mrMcpProcess
+        Assert-True -Name "Multi-repo MCP initialize responds" `
+            -Condition ($null -ne $mrInitResponse) `
+            -Message "No response"
+
+        # List tools
+        $mrRequestId++
+        $mrListResponse = Send-McpRequest -Process $mrMcpProcess -Request @{
+            jsonrpc = '2.0'
+            id      = $mrRequestId
+            method  = 'tools/list'
+            params  = @{}
+        }
+
+        Assert-True -Name "Multi-repo tools/list responds" `
+            -Condition ($null -ne $mrListResponse) `
+            -Message "No response"
+
+        if ($mrListResponse -and $mrListResponse.result) {
+            $mrToolNames = $mrListResponse.result.tools | ForEach-Object { $_.name }
+
+            # Check the 3 new tools are registered
+            foreach ($toolName in @('repo_clone', 'repo_list', 'research_status')) {
+                Assert-True -Name "Multi-repo tool '$toolName' registered" `
+                    -Condition ($toolName -in $mrToolNames) `
+                    -Message "Tool not found in tools/list"
+            }
+
+            # Check inputSchema is present for each new tool
+            foreach ($toolName in @('repo_clone', 'repo_list', 'research_status')) {
+                $toolDef = $mrListResponse.result.tools | Where-Object { $_.name -eq $toolName }
+                Assert-True -Name "Multi-repo tool '$toolName' has inputSchema" `
+                    -Condition ($null -ne $toolDef.inputSchema) `
+                    -Message "inputSchema missing"
+            }
+        }
+
+        Write-Host ""
+        Write-Host "  MULTI-REPO CATEGORIES" -ForegroundColor Cyan
+        Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+        # Test task_create with multi-repo category "research"
+        $mrRequestId++
+        $researchResponse = Send-McpRequest -Process $mrMcpProcess -Request @{
+            jsonrpc = '2.0'
+            id      = $mrRequestId
+            method  = 'tools/call'
+            params  = @{
+                name      = 'task_create'
+                arguments = @{
+                    name        = 'Test Research Task'
+                    description = 'Integration test for research category'
+                    category    = 'research'
+                    priority    = 10
+                    effort      = 'S'
+                }
+            }
+        }
+
+        if ($researchResponse -and $researchResponse.result) {
+            $researchText = $researchResponse.result.content[0].text
+            $researchObj = $researchText | ConvertFrom-Json
+            Assert-True -Name "task_create with category 'research' succeeds" `
+                -Condition ($researchObj.success -eq $true) `
+                -Message "Failed: $researchText"
+        } else {
+            Assert-True -Name "task_create with category 'research' succeeds" `
+                -Condition ($false) `
+                -Message "Error or no response: $($researchResponse | ConvertTo-Json -Compress -Depth 3)"
+        }
+
+        # Test task_create with multi-repo category "analysis"
+        $mrRequestId++
+        $analysisResponse = Send-McpRequest -Process $mrMcpProcess -Request @{
+            jsonrpc = '2.0'
+            id      = $mrRequestId
+            method  = 'tools/call'
+            params  = @{
+                name      = 'task_create'
+                arguments = @{
+                    name        = 'Test Analysis Task'
+                    description = 'Integration test for analysis category'
+                    category    = 'analysis'
+                    priority    = 10
+                    effort      = 'S'
+                }
+            }
+        }
+
+        if ($analysisResponse -and $analysisResponse.result) {
+            $analysisText = $analysisResponse.result.content[0].text
+            $analysisObj = $analysisText | ConvertFrom-Json
+            Assert-True -Name "task_create with category 'analysis' succeeds" `
+                -Condition ($analysisObj.success -eq $true) `
+                -Message "Failed: $analysisText"
+        } else {
+            Assert-True -Name "task_create with category 'analysis' succeeds" `
+                -Condition ($false) `
+                -Message "Error or no response: $($analysisResponse | ConvertTo-Json -Compress -Depth 3)"
+        }
+
+        # Test task_create with working_dir → field persists in task JSON
+        $mrRequestId++
+        $wdResponse = Send-McpRequest -Process $mrMcpProcess -Request @{
+            jsonrpc = '2.0'
+            id      = $mrRequestId
+            method  = 'tools/call'
+            params  = @{
+                name      = 'task_create'
+                arguments = @{
+                    name        = 'Test Working Dir Task'
+                    description = 'Integration test for working_dir field'
+                    category    = 'research'
+                    priority    = 10
+                    effort      = 'S'
+                    working_dir = 'repos/FakeRepo'
+                }
+            }
+        }
+
+        if ($wdResponse -and $wdResponse.result) {
+            $wdText = $wdResponse.result.content[0].text
+            $wdObj = $wdText | ConvertFrom-Json
+            Assert-True -Name "task_create with working_dir succeeds" `
+                -Condition ($wdObj.success -eq $true) `
+                -Message "Failed: $wdText"
+
+            # Read the task file to verify working_dir persists
+            if ($wdObj.file_path -and (Test-Path $wdObj.file_path)) {
+                $taskContent = Get-Content $wdObj.file_path -Raw | ConvertFrom-Json
+                Assert-Equal -Name "working_dir persists in task JSON" `
+                    -Expected "repos/FakeRepo" `
+                    -Actual $taskContent.working_dir
+            }
+        } else {
+            Assert-True -Name "task_create with working_dir succeeds" `
+                -Condition ($false) `
+                -Message "Error or no response"
+        }
+
+    } catch {
+        Write-TestResult -Name "Multi-repo MCP tests" -Status Fail -Message "Exception: $($_.Exception.Message)"
+    } finally {
+        if ($mrMcpProcess) {
+            Stop-McpServer -Process $mrMcpProcess
+        }
+        Remove-TestProject -Path $mrTestProject
+    }
+} else {
+    Write-TestResult -Name "Multi-repo tool registration" -Status Skip -Message "multi-repo profile not found"
+}
+
+Write-Host ""
+
+# ═══════════════════════════════════════════════════════════════════
 # CLEANUP
 # ═══════════════════════════════════════════════════════════════════
 

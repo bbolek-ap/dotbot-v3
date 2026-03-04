@@ -659,6 +659,8 @@ async function initProjectName() {
             projectRoot = info.full_path || 'unknown';
             executiveSummary = info.executive_summary || null;
             hasExistingCode = info.has_existing_code || false;
+            const profileName = info.profile || null;
+            updateProfilePill(profileName);
         }
     } catch (error) {
         console.warn('Could not fetch project info:', error);
@@ -678,6 +680,21 @@ function updateProjectBadge() {
     const badge = document.getElementById('project-name');
     if (badge) {
         badge.textContent = projectName;
+    }
+}
+
+/**
+ * Update profile pill in header
+ * @param {string|null} profile - Active profile name, or null to hide
+ */
+function updateProfilePill(profile) {
+    const pill = document.getElementById('profile-pill');
+    if (!pill) return;
+    if (profile) {
+        pill.textContent = profile;
+        pill.style.display = 'inline-flex';
+    } else {
+        pill.style.display = 'none';
     }
 }
 

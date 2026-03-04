@@ -11,10 +11,14 @@ and dispatches CLI invocations accordingly.
 #>
 
 # Import DotBotTheme for consistent colors
-Import-Module "$PSScriptRoot\..\modules\DotBotTheme.psm1" -Force
+if (-not (Get-Module DotBotTheme)) {
+    Import-Module "$PSScriptRoot\..\modules\DotBotTheme.psm1" -Force
+}
 
 # Import ClaudeCLI for reuse of its stream parser and helpers
-Import-Module "$PSScriptRoot\..\ClaudeCLI\ClaudeCLI.psm1" -Force
+if (-not (Get-Module ClaudeCLI)) {
+    Import-Module "$PSScriptRoot\..\ClaudeCLI\ClaudeCLI.psm1" -Force
+}
 
 #region Provider Config
 

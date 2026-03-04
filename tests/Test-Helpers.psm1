@@ -231,6 +231,39 @@ function Assert-ValidPowerShell {
     }
 }
 
+function Assert-ValidPowerShellAst {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name,
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [string]$Message = ""
+    )
+
+    if (-not (Test-Path $Path)) {
+        Write-TestResult -Name $Name -Status Fail -Message "File does not exist: $Path"
+        return
+    }
+
+    $tokens = $null
+    $parseErrors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile(
+        $Path,
+        [ref]$tokens,
+        [ref]$parseErrors
+    ) | Out-Null
+
+    if ($parseErrors.Count -eq 0) {
+        Write-TestResult -Name $Name -Status Pass
+    } else {
+        $firstError = $parseErrors[0]
+        $line = $firstError.Extent.StartLineNumber
+        $detail = "$($firstError.Message) (line $line)"
+        $msg = if ($Message) { $Message } else { "Invalid PowerShell syntax in $Path : $detail" }
+        Write-TestResult -Name $Name -Status Fail -Message $msg
+    }
+}
+
 # --- Test Project Management ---
 
 function New-TestProject {
@@ -408,6 +441,7 @@ Export-ModuleMember -Function @(
     'Assert-FileContains'
     'Assert-ValidJson'
     'Assert-ValidPowerShell'
+    'Assert-ValidPowerShellAst'
     'New-TestProject'
     'Remove-TestProject'
     'Start-McpServer'

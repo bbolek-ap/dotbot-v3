@@ -1903,3 +1903,152 @@
     opacity: 0.6;
     cursor: not-allowed;
 }
+
+/* ========== PREFLIGHT CHECKLIST ========== */
+
+.kickstart-phase.hidden {
+    display: none;
+}
+
+/* Preflight panel — CRT container with scanline overlay */
+.preflight-panel {
+    position: relative;
+    padding: 24px 20px;
+    min-height: 200px;
+}
+
+.preflight-panel::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.15),
+        rgba(0, 0, 0, 0.15) 1px,
+        transparent 1px,
+        transparent 2px
+    );
+    pointer-events: none;
+    opacity: 0.25;
+    z-index: 1;
+}
+
+.preflight-header {
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.preflight-title {
+    font-family: var(--font-mono, monospace);
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--color-primary);
+    text-shadow: 0 0 10px var(--primary-glow);
+}
+
+/* Individual check row */
+.preflight-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.preflight-check {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.preflight-check.revealed {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.preflight-check-label {
+    flex: 1;
+    font-size: 12px;
+    font-family: var(--font-mono, monospace);
+    color: var(--color-muted);
+    transition: color 0.3s ease;
+}
+
+.preflight-check-status {
+    font-size: 11px;
+    font-family: var(--font-mono, monospace);
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    min-width: 36px;
+    text-align: right;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+/* Pass state */
+.preflight-check.passed .preflight-check-label {
+    color: var(--color-success);
+}
+
+.preflight-check.passed .preflight-check-status {
+    color: var(--color-success);
+    text-shadow: 0 0 8px var(--success-glow);
+    opacity: 1;
+}
+
+/* Fail state */
+.preflight-check.failed .preflight-check-label {
+    color: var(--color-error);
+}
+
+.preflight-check.failed .preflight-check-status {
+    color: var(--color-error);
+    text-shadow: 0 0 8px var(--error-glow);
+    opacity: 1;
+}
+
+/* Hint text below failed checks */
+.preflight-check-hint {
+    padding: 2px 12px 6px 32px;
+    font-size: 11px;
+    font-family: var(--font-mono, monospace);
+    color: var(--color-muted);
+    opacity: 0.7;
+}
+
+.preflight-check-hint.hidden {
+    display: none;
+}
+
+/* Footer result text */
+.preflight-footer {
+    margin-top: 24px;
+    text-align: center;
+    min-height: 28px;
+}
+
+.preflight-footer-text {
+    font-family: var(--font-mono, monospace);
+    font-size: 15px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+}
+
+.preflight-footer-text.success {
+    color: var(--color-success);
+    text-shadow: 0 0 12px var(--success-glow);
+}
+
+.preflight-footer-text.error {
+    color: var(--color-error);
+    text-shadow: 0 0 12px var(--error-glow);
+}

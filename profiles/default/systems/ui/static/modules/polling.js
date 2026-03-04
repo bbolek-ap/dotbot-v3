@@ -16,6 +16,8 @@ function startPolling() {
     activityTimer = setInterval(pollActivity, 2000);
 }
 
+let kickstartPollCounter = 0;
+
 /**
  * Poll server for current state
  */
@@ -36,9 +38,42 @@ async function pollState() {
             Aether.processState(state);
         }
 
+        // Throttled kickstart phase status (every 5th poll cycle)
+        kickstartPollCounter++;
+        if (kickstartPollCounter >= 5) {
+            kickstartPollCounter = 0;
+            updateKickstartPhases();
+        }
+
     } catch (error) {
         console.error('Poll error:', error);
         setConnectionStatus('error');
+    }
+}
+
+/**
+ * Fetch kickstart phase status and update the workflow panel
+ */
+async function updateKickstartPhases() {
+    try {
+        const response = await fetch(`${API_BASE}/api/kickstart/status`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (data.phases && data.phases.length > 0) {
+            if (typeof renderKickstartPhases === 'function') {
+                renderKickstartPhases(data);
+            }
+            if (typeof renderOverviewKickstartPhases === 'function') {
+                renderOverviewKickstartPhases(data);
+            }
+        } else {
+            // Hide overview side panel when no phases
+            const overviewSidePanel = document.getElementById('overview-side-panel');
+            if (overviewSidePanel) overviewSidePanel.style.display = 'none';
+        }
+    } catch (error) {
+        // Silently ignore — non-critical
     }
 }
 

@@ -53,11 +53,16 @@ Write-Host ""
 $overallFailed = $false
 $layerResults = @{}
 
-# Layer 1: Structure
+# Layer 1: Structure + Compilation
 if (1 -in $layersToRun) {
     & pwsh -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\Test-Structure.ps1"
-    $exitCode = $LASTEXITCODE
-$layerResults["1"] = ($exitCode -eq 0)
+    $structureCode = $LASTEXITCODE
+
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\Test-Compilation.ps1"
+    $compilationCode = $LASTEXITCODE
+
+    $exitCode = if ($structureCode -ne 0 -or $compilationCode -ne 0) { 1 } else { 0 }
+    $layerResults["1"] = ($exitCode -eq 0)
     if ($exitCode -ne 0) { $overallFailed = $true }
 }
 

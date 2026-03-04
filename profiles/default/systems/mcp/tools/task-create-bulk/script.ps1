@@ -16,7 +16,19 @@ function Invoke-TaskCreateBulk {
     }
     
     # Validate categories and efforts
-    $validCategories = @('core', 'feature', 'enhancement', 'bugfix', 'infrastructure', 'ui-ux')
+    # Read categories from settings.default.json if available; fall back to defaults
+    $defaultCategories = @('core', 'feature', 'enhancement', 'bugfix', 'infrastructure', 'ui-ux')
+    $settingsPath = Join-Path $global:DotbotProjectRoot ".bot\defaults\settings.default.json"
+    if (Test-Path $settingsPath) {
+        $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+        if ($settings.task_categories) {
+            $validCategories = @($settings.task_categories) + $defaultCategories | Select-Object -Unique
+        } else {
+            $validCategories = $defaultCategories
+        }
+    } else {
+        $validCategories = $defaultCategories
+    }
     $validEfforts = @('XS', 'S', 'M', 'L', 'XL')
     
     # Import task index module for dependency validation
@@ -145,14 +157,26 @@ function Invoke-TaskCreateBulk {
                 steps = $steps
                 applicable_standards = $applicableStandards
                 applicable_agents = $applicableAgents
+                needs_interview = ($task.needs_interview -eq $true)
                 group_id = $task.group_id
                 human_hours = $task.human_hours
                 ai_hours = $task.ai_hours
+                working_dir = $task.working_dir
                 created_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
                 updated_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
                 completed_at = $null
             }
-            
+
+            # Passthrough: preserve extra/custom fields from input (e.g., research_prompt, external_repo)
+            $reservedFields = @('id', 'status', 'created_at', 'updated_at', 'completed_at')
+            # Use .Keys for dictionary entries; skip .NET internal properties from OrderedDictionary
+            $dictKeys = if ($task -is [System.Collections.IDictionary]) { $task.Keys } else { $task.PSObject.Properties.Name }
+            foreach ($key in $dictKeys) {
+                if (-not $newTask.ContainsKey($key) -and $key -notin $reservedFields) {
+                    $newTask[$key] = $task[$key]
+                }
+            }
+
             # Create filename from name (sanitized)
             $fileName = ($task.name -replace '[^\w\s-]', '' -replace '\s+', '-').ToLower()
             if ($fileName.Length -gt 50) {

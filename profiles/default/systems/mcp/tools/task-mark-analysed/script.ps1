@@ -1,6 +1,9 @@
 # Import session tracking module
 Import-Module (Join-Path $global:DotbotProjectRoot ".bot\systems\mcp\modules\SessionTracking.psm1") -Force
 
+# Import path sanitizer for stripping absolute paths from activity logs
+Import-Module (Join-Path $global:DotbotProjectRoot ".bot\systems\mcp\modules\PathSanitizer.psm1") -Force
+
 # Helper function to extract analysis-phase activity logs and attach to analysed tasks
 function Get-AnalysisActivityLog {
     param(
@@ -20,7 +23,10 @@ function Get-AnalysisActivityLog {
             $entry = $_ | ConvertFrom-Json
             # Match task_id AND phase is 'analysis'
             if ($entry.task_id -eq $TaskId -and $entry.phase -eq 'analysis') {
-                $sanitizedEntry = $entry | Select-Object -Property type, timestamp, message
+                # Sanitize absolute paths from message (defense-in-depth for pre-existing logs)
+                $sanitizedMessage = Remove-AbsolutePaths -Text $entry.message -ProjectRoot $global:DotbotProjectRoot
+                $sanitizedEntry = $entry | Select-Object -Property type, timestamp
+                $sanitizedEntry | Add-Member -NotePropertyName 'message' -NotePropertyValue $sanitizedMessage -Force
                 $taskActivities += $sanitizedEntry
             }
         } catch { }

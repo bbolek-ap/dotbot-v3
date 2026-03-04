@@ -33,6 +33,27 @@ async function initKickstart() {
         updateExecutiveSummary();
     }
 
+    // Apply profile-driven dialog text from /api/info
+    try {
+        const infoResp = await fetch(`${API_BASE}/api/info`);
+        if (infoResp.ok) {
+            const info = await infoResp.json();
+            const dialog = info.kickstart_dialog;
+            if (dialog) {
+                const descEl = document.getElementById('kickstart-description');
+                const labelEl = document.getElementById('kickstart-interview-label');
+                const hintEl = document.getElementById('kickstart-interview-hint');
+                const promptEl = document.getElementById('kickstart-prompt');
+                if (descEl && dialog.description) descEl.textContent = dialog.description;
+                if (labelEl && dialog.interview_label) labelEl.textContent = dialog.interview_label;
+                if (hintEl && dialog.interview_hint) hintEl.textContent = dialog.interview_hint;
+                if (promptEl && dialog.prompt_placeholder) promptEl.placeholder = dialog.prompt_placeholder;
+            }
+        }
+    } catch (error) {
+        console.warn('Could not load kickstart dialog config:', error);
+    }
+
     // Bind kickstart modal handlers
     const modal = document.getElementById('kickstart-modal');
     const closeBtn = document.getElementById('kickstart-modal-close');
@@ -188,10 +209,22 @@ function closeKickstartModal() {
         updateFileList();
         const interviewCheckbox = document.getElementById('kickstart-interview');
         if (interviewCheckbox) interviewCheckbox.checked = true;
+        const awCheckbox = document.getElementById('kickstart-auto-workflow');
+        if (awCheckbox) awCheckbox.checked = true;
         if (submitBtn) {
             submitBtn.classList.remove('loading');
             submitBtn.disabled = false;
         }
+
+        // Reset to form phase in case we were on preflight
+        const phaseForm = document.getElementById('kickstart-phase-form');
+        const phasePreflight = document.getElementById('kickstart-phase-preflight');
+        const footerForm = document.getElementById('kickstart-footer-form');
+        const footerPreflight = document.getElementById('kickstart-footer-preflight');
+        if (phasePreflight) phasePreflight.classList.add('hidden');
+        if (phaseForm) phaseForm.classList.remove('hidden');
+        if (footerPreflight) footerPreflight.classList.add('hidden');
+        if (footerForm) footerForm.classList.remove('hidden');
     }
 }
 
@@ -266,7 +299,7 @@ function removeKickstartFile(index) {
 }
 
 /**
- * Submit the kickstart request to the backend
+ * Submit the kickstart request — runs preflight checks first
  */
 async function submitKickstart() {
     const textarea = document.getElementById('kickstart-prompt');
@@ -274,6 +307,7 @@ async function submitKickstart() {
 
     const prompt = textarea?.value?.trim();
     const needsInterview = document.getElementById('kickstart-interview')?.checked ?? true;
+    const autoWorkflow = document.getElementById('kickstart-auto-workflow')?.checked ?? true;
 
     if (!prompt) {
         showToast('Please describe your project', 'warning');
@@ -286,6 +320,40 @@ async function submitKickstart() {
         submitBtn.disabled = true;
     }
 
+    // Show preflight modal immediately with "Checking..." state
+    showPreflightPhaseChecking(prompt, needsInterview, autoWorkflow);
+
+    try {
+        // Fetch preflight checks in background
+        const preResp = await fetch(`${API_BASE}/api/product/preflight`);
+        const preflight = await preResp.json();
+        const checks = preflight.checks || [];
+
+        if (checks.length === 0) {
+            // No preflight configured — go straight to kickstart
+            resetToFormPhase();
+            await executeKickstart(prompt, needsInterview, autoWorkflow);
+        } else {
+            // Update preflight phase with real results and animate
+            updatePreflightWithResults(checks, preflight.success, prompt, needsInterview, autoWorkflow);
+        }
+    } catch (error) {
+        console.error('Error during preflight:', error);
+        resetToFormPhase();
+        showToast('Error running preflight checks: ' + error.message, 'error');
+        if (submitBtn) {
+            submitBtn.classList.remove('loading');
+            submitBtn.disabled = false;
+        }
+    }
+}
+
+/**
+ * Execute the actual kickstart POST request
+ */
+async function executeKickstart(prompt, needsInterview, autoWorkflow) {
+    const submitBtn = document.getElementById('kickstart-submit');
+
     try {
         const response = await fetch(`${API_BASE}/api/product/kickstart`, {
             method: 'POST',
@@ -293,6 +361,7 @@ async function submitKickstart() {
             body: JSON.stringify({
                 prompt: prompt,
                 needs_interview: needsInterview,
+                auto_workflow: autoWorkflow,
                 files: kickstartFiles.map(f => ({
                     name: f.name,
                     content: f.content
@@ -331,6 +400,236 @@ async function submitKickstart() {
             submitBtn.classList.remove('loading');
             submitBtn.disabled = false;
         }
+    }
+}
+
+/**
+ * Show the preflight phase immediately with a "Checking..." spinner
+ * before results arrive from the server.
+ */
+function showPreflightPhaseChecking(prompt, needsInterview, autoWorkflow) {
+    const phaseForm = document.getElementById('kickstart-phase-form');
+    const phasePreflight = document.getElementById('kickstart-phase-preflight');
+    const footerForm = document.getElementById('kickstart-footer-form');
+    const footerPreflight = document.getElementById('kickstart-footer-preflight');
+    const checklist = document.getElementById('preflight-checklist');
+    const footer = document.getElementById('preflight-footer');
+    const backBtn = document.getElementById('kickstart-preflight-back');
+    const retryBtn = document.getElementById('kickstart-preflight-retry');
+
+    // Swap phases
+    phaseForm.classList.add('hidden');
+    phasePreflight.classList.remove('hidden');
+    footerForm.classList.add('hidden');
+    footerPreflight.classList.remove('hidden');
+    retryBtn.classList.add('hidden');
+    footer.innerHTML = '';
+
+    // Show loading indicator
+    checklist.innerHTML = `
+        <div class="preflight-check revealed">
+            <span class="led pulse"></span>
+            <span class="preflight-check-label">Running preflight checks\u2026</span>
+            <span class="preflight-check-status"></span>
+        </div>
+    `;
+
+    // Bind back handler
+    backBtn.onclick = resetToFormPhase;
+}
+
+/**
+ * Update preflight phase with real results after server responds
+ */
+function updatePreflightWithResults(checks, allPassed, prompt, needsInterview, autoWorkflow) {
+    const checklist = document.getElementById('preflight-checklist');
+    const footer = document.getElementById('preflight-footer');
+    const retryBtn = document.getElementById('kickstart-preflight-retry');
+    const backBtn = document.getElementById('kickstart-preflight-back');
+
+    // Replace loading indicator with actual check rows
+    checklist.innerHTML = checks.map((check, i) => `
+        <div class="preflight-check" data-index="${i}">
+            <span class="led off"></span>
+            <span class="preflight-check-label">${escapeHtml(check.message || check.name)}</span>
+            <span class="preflight-check-status"></span>
+        </div>
+        <div class="preflight-check-hint hidden" data-hint-index="${i}"></div>
+    `).join('');
+
+    // Staggered reveal of rows (100ms apart)
+    const rows = checklist.querySelectorAll('.preflight-check');
+    rows.forEach((row, i) => {
+        setTimeout(() => row.classList.add('revealed'), i * 100);
+    });
+
+    // After all revealed, resolve each at 400ms intervals
+    const revealDone = rows.length * 100 + 200;
+    checks.forEach((check, i) => {
+        setTimeout(() => resolvePreflightCheck(i, check), revealDone + i * 400);
+    });
+
+    // Show result after all resolved
+    const totalTime = revealDone + checks.length * 400 + 200;
+    setTimeout(() => {
+        showPreflightResult(allPassed, footer);
+        if (allPassed) {
+            // Auto-submit after 1.5s
+            setTimeout(() => executeKickstart(prompt, needsInterview, autoWorkflow), 1500);
+        } else {
+            retryBtn.classList.remove('hidden');
+        }
+    }, totalTime);
+
+    // Bind handlers
+    backBtn.onclick = resetToFormPhase;
+    retryBtn.onclick = () => retryPreflight(prompt, needsInterview, autoWorkflow);
+}
+
+/**
+ * Show the preflight checklist phase with staggered animation (used by retry)
+ */
+function showPreflightPhase(checks, allPassed, prompt, needsInterview, autoWorkflow) {
+    const phaseForm = document.getElementById('kickstart-phase-form');
+    const phasePreflight = document.getElementById('kickstart-phase-preflight');
+    const footerForm = document.getElementById('kickstart-footer-form');
+    const footerPreflight = document.getElementById('kickstart-footer-preflight');
+    const checklist = document.getElementById('preflight-checklist');
+    const footer = document.getElementById('preflight-footer');
+    const backBtn = document.getElementById('kickstart-preflight-back');
+    const retryBtn = document.getElementById('kickstart-preflight-retry');
+
+    // Swap phases
+    phaseForm.classList.add('hidden');
+    phasePreflight.classList.remove('hidden');
+    footerForm.classList.add('hidden');
+    footerPreflight.classList.remove('hidden');
+    retryBtn.classList.add('hidden');
+    footer.innerHTML = '';
+
+    // Render check rows with dim LEDs
+    checklist.innerHTML = checks.map((check, i) => `
+        <div class="preflight-check" data-index="${i}">
+            <span class="led off"></span>
+            <span class="preflight-check-label">${escapeHtml(check.message || check.name)}</span>
+            <span class="preflight-check-status"></span>
+        </div>
+        <div class="preflight-check-hint hidden" data-hint-index="${i}"></div>
+    `).join('');
+
+    // Staggered reveal of rows (100ms apart)
+    const rows = checklist.querySelectorAll('.preflight-check');
+    rows.forEach((row, i) => {
+        setTimeout(() => row.classList.add('revealed'), i * 100);
+    });
+
+    // After all revealed, resolve each at 400ms intervals
+    const revealDone = rows.length * 100 + 200;
+    checks.forEach((check, i) => {
+        setTimeout(() => resolvePreflightCheck(i, check), revealDone + i * 400);
+    });
+
+    // Show result after all resolved
+    const totalTime = revealDone + checks.length * 400 + 200;
+    setTimeout(() => {
+        showPreflightResult(allPassed, footer);
+        if (allPassed) {
+            // Auto-submit after 1.5s
+            setTimeout(() => executeKickstart(prompt, needsInterview, autoWorkflow), 1500);
+        } else {
+            retryBtn.classList.remove('hidden');
+        }
+    }, totalTime);
+
+    // Bind handlers
+    backBtn.onclick = resetToFormPhase;
+    retryBtn.onclick = () => retryPreflight(prompt, needsInterview, autoWorkflow);
+}
+
+/**
+ * Animate a single preflight check: LED off → pulse → green/red
+ */
+function resolvePreflightCheck(index, check) {
+    const row = document.querySelector(`.preflight-check[data-index="${index}"]`);
+    if (!row) return;
+
+    const led = row.querySelector('.led');
+    const status = row.querySelector('.preflight-check-status');
+    const hintEl = document.querySelector(`.preflight-check-hint[data-hint-index="${index}"]`);
+
+    // Pulse briefly
+    led.classList.remove('off');
+    led.classList.add('pulse');
+
+    setTimeout(() => {
+        led.classList.remove('pulse');
+
+        if (check.passed) {
+            row.classList.add('passed');
+            row.setAttribute('data-type', 'success');
+            status.textContent = 'PASS';
+        } else {
+            row.classList.add('failed');
+            row.setAttribute('data-type', 'error');
+            status.textContent = 'FAIL';
+
+            // Show hint below
+            if (hintEl && check.hint) {
+                hintEl.textContent = '\u2192 ' + check.hint;
+                hintEl.classList.remove('hidden');
+            }
+        }
+    }, 200);
+}
+
+/**
+ * Show the "ALL SYSTEMS GO" or "PREFLIGHT FAILED" footer text
+ */
+function showPreflightResult(allPassed, footerEl) {
+    if (allPassed) {
+        footerEl.innerHTML = '<span class="preflight-footer-text success">ALL SYSTEMS GO</span>';
+    } else {
+        footerEl.innerHTML = '<span class="preflight-footer-text error">PREFLIGHT FAILED</span>';
+    }
+}
+
+/**
+ * Back button — return to form phase
+ */
+function resetToFormPhase() {
+    const phaseForm = document.getElementById('kickstart-phase-form');
+    const phasePreflight = document.getElementById('kickstart-phase-preflight');
+    const footerForm = document.getElementById('kickstart-footer-form');
+    const footerPreflight = document.getElementById('kickstart-footer-preflight');
+    const submitBtn = document.getElementById('kickstart-submit');
+
+    phasePreflight.classList.add('hidden');
+    phaseForm.classList.remove('hidden');
+    footerPreflight.classList.add('hidden');
+    footerForm.classList.remove('hidden');
+
+    if (submitBtn) {
+        submitBtn.classList.remove('loading');
+        submitBtn.disabled = false;
+    }
+}
+
+/**
+ * Retry preflight checks — re-fetch and re-animate
+ */
+async function retryPreflight(prompt, needsInterview, autoWorkflow) {
+    try {
+        const preResp = await fetch(`${API_BASE}/api/product/preflight`);
+        const preflight = await preResp.json();
+        const checks = preflight.checks || [];
+
+        if (checks.length === 0) {
+            await executeKickstart(prompt, needsInterview, autoWorkflow);
+        } else {
+            showPreflightPhase(checks, preflight.success, prompt, needsInterview, autoWorkflow);
+        }
+    } catch (error) {
+        showToast('Error retrying preflight: ' + error.message, 'error');
     }
 }
 
@@ -541,4 +840,111 @@ function startRoadmapPolling() {
             // Silently continue polling
         }
     }, 5000);
+}
+
+/**
+ * Resume an incomplete kickstart from the next pending/failed phase
+ */
+async function resumeKickstart() {
+    try {
+        const response = await fetch(`${API_BASE}/api/product/kickstart/resume`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            kickstartInProgress = true;
+            kickstartProcessId = result.process_id || null;
+            showToast(`Kickstart resuming from "${result.resume_from}"...`, 'success', 8000);
+            startKickstartPolling();
+        } else {
+            showToast('Failed to resume: ' + (result.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Error resuming kickstart:', error);
+        showToast('Error resuming kickstart: ' + error.message, 'error');
+    }
+}
+
+/**
+ * Render kickstart phases panel on the Overview tab
+ * Same visual pattern as the Workflow version but targets #overview-kickstart-phases
+ */
+function renderOverviewKickstartPhases(data) {
+    const container = document.getElementById('overview-kickstart-phases');
+    const sidePanel = document.getElementById('overview-side-panel');
+    if (!container || !sidePanel || !data || !data.phases || data.phases.length === 0) {
+        if (sidePanel) sidePanel.style.display = 'none';
+        return;
+    }
+
+    const completedCount = data.phases.filter(p => p.status === 'completed').length;
+    const totalCount = data.phases.length;
+
+    const statusIcons = {
+        completed: '<span class="phase-icon phase-completed">&#10003;</span>',
+        running:   '<span class="phase-icon phase-running">&#9679;</span>',
+        failed:    '<span class="phase-icon phase-failed">&#10007;</span>',
+        skipped:   '<span class="phase-icon phase-skipped">&#8211;</span>',
+        pending:   '<span class="phase-icon phase-pending">&#9675;</span>',
+        incomplete:'<span class="phase-icon phase-failed">&#9675;</span>'
+    };
+
+    // Preserve collapsed state of inner phases section
+    const existing = container.querySelector('.kickstart-phases');
+    const wasCollapsed = existing ? existing.classList.contains('collapsed') : false;
+
+    let html = `
+        <div class="kickstart-phases${wasCollapsed ? ' collapsed' : ''}">
+            <div class="chain-layer-header" data-layer="overview-kickstart-phases">
+                <span class="chain-layer-title">Kickstart Phases</span>
+                <span class="chain-layer-count">${completedCount}/${totalCount}</span>
+            </div>
+            <div class="chain-layer-items">
+    `;
+
+    data.phases.forEach(phase => {
+        const icon = statusIcons[phase.status] || statusIcons.pending;
+        html += `
+            <div class="chain-layer-item kickstart-phase-item kickstart-phase-${phase.status}">
+                ${icon}
+                <span class="item-name">${escapeHtml(phase.name)}</span>
+            </div>
+        `;
+    });
+
+    if (data.status === 'incomplete' && data.resume_from) {
+        html += `
+            <div class="kickstart-resume-row">
+                <button class="kickstart-resume-btn" onclick="resumeKickstart()">RESUME</button>
+            </div>
+        `;
+    }
+
+    html += `
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = html;
+    sidePanel.style.display = 'flex';
+
+    // Add collapse/expand handler for inner phases section
+    const phaseHeader = container.querySelector('.kickstart-phases .chain-layer-header');
+    if (phaseHeader) {
+        phaseHeader.addEventListener('click', () => {
+            phaseHeader.closest('.kickstart-phases').classList.toggle('collapsed');
+        });
+    }
+
+    // Bind side-panel header toggle (once)
+    const panelHeader = document.getElementById('overview-side-toggle');
+    if (panelHeader && !panelHeader.dataset.bound) {
+        panelHeader.dataset.bound = '1';
+        panelHeader.addEventListener('click', () => {
+            sidePanel.classList.toggle('collapsed');
+        });
+    }
 }

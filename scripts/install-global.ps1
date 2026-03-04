@@ -115,6 +115,8 @@ function Show-Help {
     Write-Host ""
     Write-Host "    init              " -NoNewline -ForegroundColor Yellow
     Write-Host "Initialize .bot in current project" -ForegroundColor White
+    Write-Host "    profiles          " -NoNewline -ForegroundColor Yellow
+    Write-Host "List available profiles" -ForegroundColor White
     Write-Host "    status            " -NoNewline -ForegroundColor Yellow
     Write-Host "Show installation status" -ForegroundColor White
     Write-Host "    update            " -NoNewline -ForegroundColor Yellow
@@ -200,6 +202,71 @@ function Invoke-Status {
     }
 }
 
+function Invoke-Profiles {
+    $profilesDir = Join-Path $DotbotBase "profiles"
+    if (-not (Test-Path $profilesDir)) {
+        Write-Host "  No profiles directory found at: $profilesDir" -ForegroundColor Red
+        return
+    }
+
+    $workflows = @()
+    $stacks = @()
+
+    Get-ChildItem -Path $profilesDir -Directory | Where-Object { $_.Name -ne "default" } | ForEach-Object {
+        $yamlPath = Join-Path $_.FullName "profile.yaml"
+        $meta = @{ type = "stack"; name = $_.Name; description = ""; extends = $null }
+        if (Test-Path $yamlPath) {
+            Get-Content $yamlPath | ForEach-Object {
+                if ($_ -match '^\s*(type|name|description|extends)\s*:\s*(.+)$') {
+                    $meta[$Matches[1]] = $Matches[2].Trim()
+                }
+            }
+        }
+        if ($meta.type -eq "workflow") { $workflows += $meta }
+        else { $stacks += $meta }
+    }
+
+    Write-Host ""
+    Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Blue
+    Write-Host ""
+    Write-Host "    D O T B O T   v3" -ForegroundColor Blue
+    Write-Host "    Available Profiles" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Blue
+    Write-Host ""
+
+    if ($workflows.Count -gt 0) {
+        Write-Host "  WORKFLOWS (at most one)" -ForegroundColor Blue
+        Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+        Write-Host ""
+        foreach ($w in $workflows) {
+            Write-Host "    $($w.name.PadRight(18))" -NoNewline -ForegroundColor Yellow
+            Write-Host $w.description -ForegroundColor White
+        }
+        Write-Host ""
+    }
+
+    if ($stacks.Count -gt 0) {
+        Write-Host "  STACKS (composable)" -ForegroundColor Blue
+        Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+        Write-Host ""
+        foreach ($s in $stacks) {
+            $label = $s.name
+            if ($s.extends) { $label += " (extends: $($s.extends))" }
+            Write-Host "    $($label.PadRight(36))" -NoNewline -ForegroundColor Yellow
+            Write-Host $s.description -ForegroundColor White
+        }
+        Write-Host ""
+    }
+
+    Write-Host "  USAGE" -ForegroundColor Blue
+    Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "    dotbot init --profile dotnet" -ForegroundColor White
+    Write-Host "    dotbot init --profile multi-repo,dotnet-blazor,dotnet-ef" -ForegroundColor White
+    Write-Host ""
+}
+
 function Invoke-Update {
     Write-Host ""
     Write-Host "  To update dotbot:" -ForegroundColor Yellow
@@ -212,6 +279,7 @@ function Invoke-Update {
 
 switch ($Command) {
     "init" { Invoke-Init }
+    "profiles" { Invoke-Profiles }
     "status" { Invoke-Status }
     "update" { Invoke-Update }
     "help" { Show-Help }

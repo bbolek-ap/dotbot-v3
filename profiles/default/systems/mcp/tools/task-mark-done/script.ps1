@@ -1,6 +1,9 @@
 # Import session tracking module
 Import-Module (Join-Path $global:DotbotProjectRoot ".bot\systems\mcp\modules\SessionTracking.psm1") -Force
 
+# Import path sanitizer for stripping absolute paths from activity logs
+Import-Module (Join-Path $global:DotbotProjectRoot ".bot\systems\mcp\modules\PathSanitizer.psm1") -Force
+
 # Helper function to extract execution-phase activity logs
 function Get-ExecutionActivityLog {
     param(
@@ -21,15 +24,8 @@ function Get-ExecutionActivityLog {
             $entry = $_ | ConvertFrom-Json
             # Match task_id AND (phase is 'execution' OR phase is null/missing for backward compat)
             if ($entry.task_id -eq $TaskId -and (-not $entry.phase -or $entry.phase -eq 'execution')) {
-                # Sanitize paths in message to be relative to project root
-                $sanitizedMessage = $entry.message
-                if ($ProjectRoot -and $sanitizedMessage) {
-                    $escapedRoot = [regex]::Escape($ProjectRoot)
-                    $sanitizedMessage = $sanitizedMessage -replace $escapedRoot, '.'
-                    $normalizedRoot = $ProjectRoot -replace '\\', '/'
-                    $escapedNormalizedRoot = [regex]::Escape($normalizedRoot)
-                    $sanitizedMessage = $sanitizedMessage -replace $escapedNormalizedRoot, '.'
-                }
+                # Sanitize absolute paths from message (defense-in-depth for pre-existing logs)
+                $sanitizedMessage = Remove-AbsolutePaths -Text $entry.message -ProjectRoot $ProjectRoot
                 $sanitizedEntry = $entry | Select-Object -Property type, timestamp
                 $sanitizedEntry | Add-Member -NotePropertyName 'message' -NotePropertyValue $sanitizedMessage -Force
                 $taskActivities += $sanitizedEntry

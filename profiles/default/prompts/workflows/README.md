@@ -2,9 +2,21 @@
 
 This directory contains workflow prompts that guide AI agents through specific processes. Each workflow is a self-contained document that provides step-by-step instructions for completing a particular type of work.
 
+## Numbering Convention
+
+| Range | Purpose | Survives profile overlay? |
+|-------|---------|---------------------------|
+| 00-89 | Profile-specific workflow steps | No — cleared when a workflow profile is installed |
+| 90-97 | Universal utilities (commit, tasks, steering) | Yes |
+| 98-99 | Core execution (analyse, autonomous) | Yes |
+
+When a workflow-type profile (e.g., `multi-repo`) is installed via `dotbot init`, any default workflow files in the 00-89 range that are **not** provided by the overlay profile are automatically removed. Files numbered 90+ are preserved across all profiles.
+
 ## Available Workflows
 
-### 01-plan-product.md
+### Profile-Specific (00-89)
+
+#### 01-plan-product.md
 **Purpose**: Create or refine product plans and roadmaps
 
 **When to use**:
@@ -12,7 +24,7 @@ This directory contains workflow prompts that guide AI agents through specific p
 - Planning feature sets and priorities
 - Creating product documentation
 
-### 03-plan-roadmap.md
+#### 03-plan-roadmap.md
 **Purpose**: Develop implementation roadmaps from product plans
 
 **When to use**:
@@ -20,15 +32,7 @@ This directory contains workflow prompts that guide AI agents through specific p
 - Sequencing work and identifying dependencies
 - Creating development timelines
 
-### 04-new-tasks.md
-**Purpose**: Generate new tasks from plans or requirements
-
-**When to use**:
-- Converting plan sections into actionable tasks
-- Creating TODO lists for development work
-- Defining task acceptance criteria
-
-### 05-retrospective-task.md
+#### 05-retrospective-task.md
 **Purpose**: Document completed work retrospectively
 
 **When to use**:
@@ -46,7 +50,9 @@ This directory contains workflow prompts that guide AI agents through specific p
 - Task JSON: `.bot/workspace/tasks/done/{task-name}-{task-id}.json`
 - Plan markdown: `.bot/workspace/plans/{task-name}-{task-id}-plan.md`
 
-### 06-commit-and-push.md
+### Universal Utilities (90-97)
+
+#### 90-commit-and-push.md
 **Purpose**: Organize changes into logical commits and push
 
 **When to use**:
@@ -60,7 +66,23 @@ This directory contains workflow prompts that guide AI agents through specific p
 - Split vs combine decisions
 - Quick reference for git operations
 
-### 99-autonomous-task.md
+#### 91-new-tasks.md
+**Purpose**: Generate new tasks from plans or requirements
+
+**When to use**:
+- Converting plan sections into actionable tasks
+- Creating TODO lists for development work
+- Defining task acceptance criteria
+
+#### 92-steering-protocol.include.md
+**Purpose**: Steering protocol included in autonomous workflows to allow operator interrupts
+
+### Core Execution (98-99)
+
+#### 98-analyse-task.md
+**Purpose**: Pre-flight analysis — explore codebase, identify affected files, build context
+
+#### 99-autonomous-task.md
 **Purpose**: Complete development tasks autonomously in "Go Mode"
 
 **When to use**:

@@ -35,6 +35,10 @@ Human-readable description for UI display
 
 .PARAMETER ProcessId
 Optional: resume an existing process by ID (skips creation)
+
+.PARAMETER NoWait
+If set with -Continue, exit when no tasks available instead of waiting.
+Used by kickstart pipeline to prevent workflow children from blocking phase progression.
 #>
 
 param(
@@ -51,7 +55,10 @@ param(
     [int]$MaxTasks = 0,
     [string]$Description,
     [string]$ProcessId,
-    [switch]$NeedsInterview
+    [switch]$NeedsInterview,
+    [switch]$AutoWorkflow,
+    [switch]$NoWait,
+    [string]$FromPhase
 )
 
 # --- Configuration ---
@@ -83,8 +90,8 @@ if (-not (Test-Path $processesDir)) {
 }
 
 # Import modules
-Import-Module "$PSScriptRoot\ClaudeCLI\ClaudeCLI.psm1" -Force
 Import-Module "$PSScriptRoot\ProviderCLI\ProviderCLI.psm1" -Force
+Import-Module "$PSScriptRoot\ClaudeCLI\ClaudeCLI.psm1" -Force
 Import-Module "$PSScriptRoot\modules\DotBotTheme.psm1" -Force
 $t = Get-DotBotTheme
 
@@ -155,8 +162,22 @@ function Write-ProcessFile {
     param([string]$Id, [hashtable]$Data)
     $filePath = Join-Path $processesDir "$Id.json"
     $tempFile = "$filePath.tmp"
-    $Data | ConvertTo-Json -Depth 10 | Set-Content -Path $tempFile -Encoding utf8NoBOM -NoNewline
-    Move-Item -Path $tempFile -Destination $filePath -Force
+
+    $maxRetries = 3
+    for ($r = 0; $r -lt $maxRetries; $r++) {
+        try {
+            $Data | ConvertTo-Json -Depth 10 | Set-Content -Path $tempFile -Encoding utf8NoBOM -NoNewline
+            Move-Item -Path $tempFile -Destination $filePath -Force -ErrorAction Stop
+            return
+        } catch {
+            if (Test-Path $tempFile) { Remove-Item $tempFile -Force -ErrorAction SilentlyContinue }
+            if ($r -lt ($maxRetries - 1)) {
+                Start-Sleep -Milliseconds (50 * ($r + 1))
+            } else {
+                Write-Diag "Write-ProcessFile FAILED for $Id after $maxRetries retries: $_"
+            }
+        }
+    }
 }
 
 function Write-ProcessActivity {
@@ -185,7 +206,17 @@ function Write-ProcessActivity {
     }
 
     # Also write to global activity.jsonl for oscilloscope backward compat
-    try { Write-ActivityLog -Type $ActivityType -Message $Message } catch {}
+    try { Write-ActivityLog -Type $ActivityType -Message $Message } catch {
+        Write-Diag "Write-ActivityLog FAILED: $_ | Type=$ActivityType Msg=$Message"
+    }
+}
+
+function Write-Diag {
+    param([string]$Msg)
+    if (-not $script:diagLogPath) { return }
+    try {
+        "$(Get-Date -Format 'o') [$PID] $Msg" | Add-Content -Path $script:diagLogPath -Encoding utf8NoBOM
+    } catch {}
 }
 
 function Test-ProcessStopSignal {
@@ -308,6 +339,9 @@ function Get-NextTodoTask {
                         $taskObj.questions_resolved = $content.questions_resolved
                         $taskObj.claude_session_id = $content.claude_session_id
                         $taskObj.needs_interview = $content.needs_interview
+                        $taskObj.working_dir = $content.working_dir
+                        $taskObj.external_repo = $content.external_repo
+                        $taskObj.research_prompt = $content.research_prompt
                     }
                     return @{
                         success = $true
@@ -332,6 +366,58 @@ function Get-NextTodoTask {
         task = $null
         message = "No tasks available for analysis."
     }
+}
+
+function Get-NextWorkflowTask {
+    param([switch]$Verbose)
+
+    # First priority: check for analysing tasks that came back from needs-input
+    $index = Get-TaskIndex
+    $resumedTasks = @($index.Analysing.Values) | Sort-Object priority
+    foreach ($candidate in $resumedTasks) {
+        if ($candidate.file_path -and (Test-Path $candidate.file_path)) {
+            try {
+                $content = Get-Content -Path $candidate.file_path -Raw | ConvertFrom-Json
+                if ($content.questions_resolved -and $content.questions_resolved.Count -gt 0 -and -not $content.pending_question) {
+                    Write-Status "Found resumed task (question answered): $($candidate.name)" -Type Info
+                    $taskObj = @{
+                        id = $content.id
+                        name = $content.name
+                        status = 'analysing'
+                        priority = [int]$content.priority
+                        effort = $content.effort
+                        category = $content.category
+                    }
+                    if ($Verbose.IsPresent) {
+                        $taskObj.description = $content.description
+                        $taskObj.dependencies = $content.dependencies
+                        $taskObj.acceptance_criteria = $content.acceptance_criteria
+                        $taskObj.steps = $content.steps
+                        $taskObj.applicable_agents = $content.applicable_agents
+                        $taskObj.applicable_standards = $content.applicable_standards
+                        $taskObj.file_path = $candidate.file_path
+                        $taskObj.questions_resolved = $content.questions_resolved
+                        $taskObj.claude_session_id = $content.claude_session_id
+                        $taskObj.needs_interview = $content.needs_interview
+                        $taskObj.working_dir = $content.working_dir
+                        $taskObj.external_repo = $content.external_repo
+                        $taskObj.research_prompt = $content.research_prompt
+                    }
+                    return @{
+                        success = $true
+                        task = $taskObj
+                        message = "Resumed task (question answered): $($content.name)"
+                    }
+                }
+            } catch {
+                Write-Warning "Failed to read analysing task: $($candidate.file_path) - $_"
+            }
+        }
+    }
+
+    # Second priority: prefer analysed tasks (ready for execution), then todo
+    $result = Invoke-TaskGetNext -Arguments @{ prefer_analysed = $true; verbose = $Verbose.IsPresent }
+    return $result
 }
 
 # --- Crash Trap ---
@@ -380,6 +466,7 @@ $processData = @{
     task_id         = $TaskId
     task_name       = $null
     continue        = [bool]$Continue
+    no_wait         = [bool]$NoWait
     model           = $Model
     pid             = $PID
     session_id      = $sessionId
@@ -395,9 +482,17 @@ $processData = @{
     error           = $null
     workflow        = $null
     description     = $Description
+    phases          = @()
 }
 
 Write-ProcessFile -Id $procId -Data $processData
+
+# Initialize diagnostic log
+$script:diagLogPath = Join-Path $controlDir "diag-$procId.log"
+Write-Diag "=== Process started: Type=$Type, ProcId=$procId, PID=$PID, Continue=$Continue, NoWait=$NoWait ==="
+Write-Diag "BotRoot=$botRoot | ProcessesDir=$processesDir | ProjectRoot=$projectRoot"
+$procFilePath = Join-Path $processesDir "$procId.json"
+Write-Diag "Process file exists: $(Test-Path $procFilePath) at $procFilePath"
 
 # Banner
 Write-Card -Title "PROCESS: $($Type.ToUpper())" -Width 50 -BorderStyle Rounded -BorderColor Label -TitleColor Label -Lines @(
@@ -409,6 +504,203 @@ Write-Card -Title "PROCESS: $($Type.ToUpper())" -Width 50 -BorderStyle Rounded -
 Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Process $procId started ($Type)"
 Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Preflight OK: $($preflight.checks -join '; ')"
 
+
+# --- Helper: Interview loop (reusable for Phase 0 and interview-type phases) ---
+function Invoke-InterviewLoop {
+    param(
+        [string]$ProcessId,
+        [hashtable]$ProcessData,
+        [string]$BotRoot,
+        [string]$ProductDir,
+        [string]$UserPrompt,
+        [switch]$ShowDebugJson,
+        [switch]$ShowVerboseOutput
+    )
+
+    $processData = $ProcessData
+
+    # Load interview prompt template
+    $interviewWorkflowPath = Join-Path $BotRoot "prompts\workflows\00-kickstart-interview.md"
+    $interviewWorkflow = ""
+    if (Test-Path $interviewWorkflowPath) {
+        $interviewWorkflow = Get-Content $interviewWorkflowPath -Raw
+    }
+
+    # Check for briefing files
+    $briefingDir = Join-Path $ProductDir "briefing"
+    $interviewFileRefs = ""
+    if (Test-Path $briefingDir) {
+        $briefingFiles = Get-ChildItem -Path $briefingDir -File
+        if ($briefingFiles.Count -gt 0) {
+            $interviewFileRefs = "`n`nBriefing files have been saved to the briefing/ directory. Read and use these for context:`n"
+            foreach ($bf in $briefingFiles) {
+                $interviewFileRefs += "- $($bf.FullName)`n"
+            }
+        }
+    }
+
+    $interviewRound = 0
+    $allQandA = @()
+    $questionsPath = Join-Path $ProductDir "clarification-questions.json"
+    $summaryPath = Join-Path $ProductDir "interview-summary.md"
+
+    # Use Opus for interview quality
+    $interviewModel = Resolve-ProviderModelId -ModelAlias 'Opus'
+
+    do {
+        $interviewRound++
+
+        # Build previous Q&A context
+        $previousContext = ""
+        if ($allQandA.Count -gt 0) {
+            $previousContext = "`n`n## Previous Interview Rounds`n"
+            foreach ($round in $allQandA) {
+                $previousContext += "`n### Round $($round.round)`n"
+                foreach ($qa in $round.pairs) {
+                    $previousContext += "**Q:** $($qa.question)`n**A:** $($qa.answer)`n`n"
+                }
+            }
+        }
+
+        # Clean up any previous round's files
+        if (Test-Path $questionsPath) { Remove-Item $questionsPath -Force }
+        if (Test-Path $summaryPath) { Remove-Item $summaryPath -Force }
+
+        $interviewPrompt = @"
+$interviewWorkflow
+
+## User's Project Description
+
+$UserPrompt
+$interviewFileRefs
+$previousContext
+
+## Instructions
+
+Review all context above. Decide whether to write clarification-questions.json (more questions needed) or interview-summary.md (all clear). Write exactly one file to .bot/workspace/product/.
+"@
+
+        Write-Status "Interview round $interviewRound..." -Type Process
+        Write-ProcessActivity -Id $ProcessId -ActivityType "text" -Message "Interview round $interviewRound"
+
+        $interviewSessionId = New-ProviderSession
+        $streamArgs = @{
+            Prompt = $interviewPrompt
+            Model = $interviewModel
+            SessionId = $interviewSessionId
+            PersistSession = $false
+        }
+        if ($ShowDebugJson) { $streamArgs['ShowDebugJson'] = $true }
+        if ($ShowVerboseOutput) { $streamArgs['ShowVerbose'] = $true }
+
+        Invoke-ProviderStream @streamArgs
+
+        # Check what Opus wrote
+        if (Test-Path $summaryPath) {
+            Write-Status "Interview complete — summary written" -Type Complete
+            Write-ProcessActivity -Id $ProcessId -ActivityType "text" -Message "Interview complete after $interviewRound round(s)"
+
+            # Add YAML front matter to interview summary
+            $meta = @{
+                generated_at = (Get-Date).ToUniversalTime().ToString("o")
+                model = $interviewModel
+                process_id = $ProcessId
+                phase = "interview"
+                generator = "dotbot-kickstart"
+            }
+            Add-YamlFrontMatter -FilePath $summaryPath -Metadata $meta
+
+            break
+        }
+
+        if (Test-Path $questionsPath) {
+            try {
+                $questionsRaw = Get-Content $questionsPath -Raw
+                $questionsData = $questionsRaw | ConvertFrom-Json
+                $questions = $questionsData.questions
+            } catch {
+                Write-Status "Failed to parse questions JSON: $($_.Exception.Message)" -Type Warn
+                break
+            }
+
+            Write-Status "Round ${interviewRound}: $($questions.Count) question(s) — waiting for user" -Type Info
+
+            # Set process to needs-input
+            $processData.status = 'needs-input'
+            $processData.pending_questions = $questionsData
+            $processData.interview_round = $interviewRound
+            $processData.heartbeat_status = "Waiting for interview answers (round $interviewRound)"
+            Write-ProcessFile -Id $ProcessId -Data $processData
+            Write-ProcessActivity -Id $ProcessId -ActivityType "text" -Message "Waiting for user answers (round $interviewRound, $($questions.Count) questions)"
+
+            # Poll for answers file
+            $answersPath = Join-Path $ProductDir "clarification-answers.json"
+            if (Test-Path $answersPath) { Remove-Item $answersPath -Force }
+
+            while (-not (Test-Path $answersPath)) {
+                if (Test-ProcessStopSignal -Id $ProcessId) {
+                    Write-Status "Stop signal received during interview" -Type Error
+                    $processData.status = 'stopped'
+                    $processData.failed_at = (Get-Date).ToUniversalTime().ToString("o")
+                    $processData.pending_questions = $null
+                    Write-ProcessFile -Id $ProcessId -Data $processData
+                    throw "Process stopped by user during interview"
+                }
+                Start-Sleep -Seconds 2
+            }
+
+            # Read answers
+            try {
+                $answersRaw = Get-Content $answersPath -Raw
+                $answersData = $answersRaw | ConvertFrom-Json
+            } catch {
+                Write-Status "Failed to parse answers JSON: $($_.Exception.Message)" -Type Warn
+                break
+            }
+
+            # Check if user skipped
+            if ($answersData.skipped -eq $true) {
+                Write-Status "User skipped interview" -Type Info
+                Write-ProcessActivity -Id $ProcessId -ActivityType "text" -Message "User skipped interview at round $interviewRound"
+                # Clean up
+                Remove-Item $questionsPath -Force -ErrorAction SilentlyContinue
+                Remove-Item $answersPath -Force -ErrorAction SilentlyContinue
+                break
+            }
+
+            # Accumulate Q&A for next round
+            $allQandA += @{
+                round = $interviewRound
+                pairs = @($answersData.answers)
+            }
+
+            Write-Status "Answers received for round $interviewRound" -Type Success
+            Write-ProcessActivity -Id $ProcessId -ActivityType "text" -Message "Received answers for round $interviewRound"
+
+            # Clean up for next iteration
+            Remove-Item $questionsPath -Force -ErrorAction SilentlyContinue
+            Remove-Item $answersPath -Force -ErrorAction SilentlyContinue
+
+            # Reset process status
+            $processData.status = 'running'
+            $processData.pending_questions = $null
+            $processData.interview_round = $null
+            $processData.heartbeat_status = "Processing interview answers"
+            Write-ProcessFile -Id $ProcessId -Data $processData
+        } else {
+            # Neither file written — something went wrong, proceed without
+            Write-Status "Interview round produced no output — proceeding" -Type Warn
+            Write-ProcessActivity -Id $ProcessId -ActivityType "text" -Message "Interview round $interviewRound produced no output — skipping"
+            break
+        }
+    } while ($true)
+
+    # Ensure status is running after interview
+    $processData.status = 'running'
+    $processData.pending_questions = $null
+    $processData.interview_round = $null
+    Write-ProcessFile -Id $ProcessId -Data $processData
+}
 # --- Task-based types: analysis/execution ---
 if ($Type -in @('analysis', 'execution')) {
     # Initialize session for execution type
@@ -559,7 +851,7 @@ if ($Type -in @('analysis', 'execution')) {
             }
 
             if (-not $taskResult.task) {
-                if ($Continue) {
+                if ($Continue -and -not $NoWait) {
                     $waitReason = if ($taskResult.message) { $taskResult.message } else { "No eligible tasks." }
                     Write-Status "No tasks available - waiting... ($waitReason)" -Type Info
                     Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Waiting for new tasks..."
@@ -959,7 +1251,7 @@ Do NOT implement the task. Your job is research and preparation only.
             $processData.task_name = $null
 
             # Delay between tasks
-            Write-Phosphor "Waiting 3s before next task..." -Color Bezel
+            Write-Status "Waiting 3s before next task..." -Type Info
             for ($i = 0; $i -lt 3; $i++) {
                 Start-Sleep -Seconds 1
                 if (Test-ProcessStopSignal -Id $procId) { break }
@@ -994,6 +1286,7 @@ elseif ($Type -eq 'workflow') {
     if ($sessionResult.success) {
         $sessionId = $sessionResult.session.session_id
     }
+    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Workflow child started (session: $sessionId, PID: $PID)"
 
     # Load both prompt templates
     $analysisTemplateFile = Join-Path $botRoot "prompts\workflows\98-analyse-task.md"
@@ -1032,25 +1325,47 @@ elseif ($Type -eq 'workflow') {
     # Initialize task index
     Initialize-TaskIndex -TasksBaseDir $tasksBaseDir
 
+    # Log task index state for diagnostics
+    $initIndex = Get-TaskIndex
+    $todoCount = if ($initIndex.Todo) { $initIndex.Todo.Count } else { 0 }
+    $analysedCount = if ($initIndex.Analysed) { $initIndex.Analysed.Count } else { 0 }
+    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Task index loaded: $todoCount todo, $analysedCount analysed"
+
     $tasksProcessed = 0
     $maxRetriesPerTask = 2
     $consecutiveFailureThreshold = 3
+
+    # Ensure repo has at least one commit (required for worktrees)
+    $hasCommits = git -C $projectRoot rev-parse --verify HEAD 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Status "Creating initial commit (required for worktrees)..." -Type Process
+        git -C $projectRoot add .bot/ 2>$null
+        git -C $projectRoot commit -m "chore: initialize dotbot" --allow-empty 2>$null
+        Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Created initial git commit (repo had no commits)"
+    }
 
     # Update process status to running
     $processData.status = 'running'
     Write-ProcessFile -Id $procId -Data $processData
 
+    $loopIteration = 0
     try {
         while ($true) {
+            $loopIteration++
+            Write-Diag "--- Loop iteration $loopIteration ---"
+
             # Check max tasks
+            Write-Diag "MaxTasks check: tasksProcessed=$tasksProcessed, MaxTasks=$MaxTasks"
             if ($MaxTasks -gt 0 -and $tasksProcessed -ge $MaxTasks) {
                 Write-Status "Reached maximum task limit ($MaxTasks)" -Type Warn
+                Write-Diag "EXIT: MaxTasks reached"
                 break
             }
 
             # Check stop signal
             if (Test-ProcessStopSignal -Id $procId) {
                 Write-Status "Stop signal received" -Type Error
+                Write-Diag "EXIT: Stop signal received"
                 $processData.status = 'stopped'
                 $processData.failed_at = (Get-Date).ToUniversalTime().ToString("o")
                 Write-ProcessFile -Id $procId -Data $processData
@@ -1062,18 +1377,22 @@ elseif ($Type -eq 'workflow') {
             Write-Status "Fetching next task..." -Type Process
             Reset-TaskIndex
 
-            # Check resumed tasks (answered questions) first, then todo
-            $taskResult = Get-NextTodoTask -Verbose
+            # Check resumed tasks, analysed tasks, then todo
+            $taskResult = Get-NextWorkflowTask -Verbose
+
+            Write-Diag "TaskPickup: success=$($taskResult.success) hasTask=$($null -ne $taskResult.task) msg=$($taskResult.message)"
 
             if (-not $taskResult.success) {
                 Write-Status "Error fetching task: $($taskResult.message)" -Type Error
+                Write-Diag "EXIT: Error fetching task: $($taskResult.message)"
                 break
             }
 
             if (-not $taskResult.task) {
-                if ($Continue) {
+                if ($Continue -and -not $NoWait) {
                     $waitReason = if ($taskResult.message) { $taskResult.message } else { "No eligible tasks." }
                     Write-Status "No tasks available - waiting... ($waitReason)" -Type Info
+                    Write-Diag "Entering wait loop (Continue=$Continue, NoWait=$NoWait): $waitReason"
                     Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Waiting for new tasks..."
 
                     $foundTask = $false
@@ -1083,12 +1402,16 @@ elseif ($Type -eq 'workflow') {
                         $processData.last_heartbeat = (Get-Date).ToUniversalTime().ToString("o")
                         Write-ProcessFile -Id $procId -Data $processData
                         Reset-TaskIndex
-                        $taskResult = Get-NextTodoTask -Verbose
+                        $taskResult = Get-NextWorkflowTask -Verbose
                         if ($taskResult.task) { $foundTask = $true; break }
                     }
-                    if (-not $foundTask) { break }
+                    if (-not $foundTask) {
+                        Write-Diag "EXIT: No task found after wait loop (foundTask=$foundTask)"
+                        break
+                    }
                 } else {
                     Write-Status "No tasks available" -Type Info
+                    Write-Diag "EXIT: No tasks and Continue not set"
                     break
                 }
             }
@@ -1097,9 +1420,22 @@ elseif ($Type -eq 'workflow') {
             $processData.task_id = $task.id
             $processData.task_name = $task.name
             $env:DOTBOT_CURRENT_TASK_ID = $task.id
-            Write-Status "Task: $($task.name)" -Type Success
+            Write-Status "Task: $($task.name) (status: $($task.status))" -Type Success
+            Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Processing task: $($task.name) (id: $($task.id), status: $($task.status))"
+            Write-Diag "Selected task: id=$($task.id) name=$($task.name) status=$($task.status)"
 
-            # ===== PHASE 1: Analysis =====
+            # Skip analysis for already-analysed tasks — jump straight to execution
+            if ($task.status -eq 'analysed') {
+                Write-Status "Task already analysed — skipping to execution phase" -Type Info
+                Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Task already analysed, proceeding to execution: $($task.name)"
+                # Jump to Phase 2 (execution) below — the analysis block is wrapped in a conditional
+            }
+
+            try {   # Per-task try/catch — catches failures in BOTH analysis and execution phases
+
+            # ===== PHASE 1: Analysis (skipped if task already analysed) =====
+            if ($task.status -ne 'analysed') {
+            Write-Diag "Entering analysis phase for task $($task.id)"
             $env:DOTBOT_CURRENT_PHASE = 'analysis'
             $processData.heartbeat_status = "Analysing: $($task.name)"
             Write-ProcessFile -Id $procId -Data $processData
@@ -1141,7 +1477,7 @@ elseif ($Type -eq 'workflow') {
             }
 
             # Use analysis model from settings
-            $analysisModel = if ($settings.analysis?.model) { $settings.analysis.model }  else { $providerConfig.default_model }
+            $analysisModel = if ($settings.analysis?.model) { $settings.analysis.model } else { 'Opus' }
             $analysisModelName = Resolve-ProviderModelId -ModelAlias $analysisModel
 
             $fullAnalysisPrompt = @"
@@ -1252,7 +1588,10 @@ Do NOT implement the task. Your job is research and preparation only.
             # Clean up analysis session
             try { Remove-ProviderSession -SessionId $analysisSessionId -ProjectRoot $projectRoot | Out-Null } catch {}
 
+            Write-Diag "Analysis outcome: success=$analysisSuccess outcome=$analysisOutcome"
+
             if (-not $analysisSuccess) {
+                Write-Diag "Analysis FAILED for task $($task.id)"
                 Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Analysis failed: $($task.name)"
                 # Skip to next task
                 if (-not $Continue) { break }
@@ -1270,6 +1609,7 @@ Do NOT implement the task. Your job is research and preparation only.
 
             # If analysis resulted in needs-input or skipped, don't proceed to execution
             if ($analysisOutcome -ne 'analysed') {
+                Write-Diag "Task not ready for execution: outcome=$analysisOutcome"
                 Write-Status "Task not ready for execution (status: $analysisOutcome) - moving to next task" -Type Info
                 Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Task $($task.name) needs input or was skipped - moving on"
                 if (-not $Continue) { break }
@@ -1282,16 +1622,21 @@ Do NOT implement the task. Your job is research and preparation only.
                 }
                 continue
             }
+            } # end: if ($task.status -ne 'analysed') — analysis phase
 
             # ===== PHASE 2: Execution =====
+            Write-Diag "Entering execution phase for task $($task.id)"
             $env:DOTBOT_CURRENT_PHASE = 'execution'
             $processData.heartbeat_status = "Executing: $($task.name)"
             Write-ProcessFile -Id $procId -Data $processData
             Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Execution phase started: $($task.name)"
 
+            try {
+
             # Re-read task data (analysis may have enriched it)
             Reset-TaskIndex
-            $freshTask = Invoke-TaskGetNext -Arguments @{ verbose = $true }
+            $freshTask = Invoke-TaskGetNext -Arguments @{ prefer_analysed = $true; verbose = $true }
+            Write-Diag "Execution TaskGetNext: hasTask=$($null -ne $freshTask.task) matchesId=$($freshTask.task.id -eq $task.id)"
             if ($freshTask.task -and $freshTask.task.id -eq $task.id) {
                 $task = $freshTask.task
             }
@@ -1300,28 +1645,36 @@ Do NOT implement the task. Your job is research and preparation only.
             Invoke-TaskMarkInProgress -Arguments @{ task_id = $task.id } | Out-Null
             Invoke-SessionUpdate -Arguments @{ current_task_id = $task.id } | Out-Null
 
-            # Worktree setup
+            # Worktree setup — skip for research tasks and tasks with external repos
+            $skipWorktree = ($task.category -eq 'research') -or $task.working_dir -or $task.external_repo
+            Write-Diag "Worktree: skip=$skipWorktree category=$($task.category)"
             $worktreePath = $null
             $branchName = $null
-            $wtInfo = Get-TaskWorktreeInfo -TaskId $task.id -BotRoot $botRoot
-            if ($wtInfo -and (Test-Path $wtInfo.worktree_path)) {
-                $worktreePath = $wtInfo.worktree_path
-                $branchName = $wtInfo.branch_name
-                Write-Status "Using worktree: $worktreePath" -Type Info
+
+            if ($skipWorktree) {
+                Write-Status "Skipping worktree (category: $($task.category))" -Type Info
+                Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Skipping worktree for task: $($task.name) (research/external repo task)"
             } else {
-                $wtResult = New-TaskWorktree -TaskId $task.id -TaskName $task.name `
-                    -ProjectRoot $projectRoot -BotRoot $botRoot
-                if ($wtResult.success) {
-                    $worktreePath = $wtResult.worktree_path
-                    $branchName = $wtResult.branch_name
-                    Write-Status "Worktree: $worktreePath" -Type Info
+                $wtInfo = Get-TaskWorktreeInfo -TaskId $task.id -BotRoot $botRoot
+                if ($wtInfo -and (Test-Path $wtInfo.worktree_path)) {
+                    $worktreePath = $wtInfo.worktree_path
+                    $branchName = $wtInfo.branch_name
+                    Write-Status "Using worktree: $worktreePath" -Type Info
                 } else {
-                    Write-Status "Worktree failed: $($wtResult.message)" -Type Warn
+                    $wtResult = New-TaskWorktree -TaskId $task.id -TaskName $task.name `
+                        -ProjectRoot $projectRoot -BotRoot $botRoot
+                    if ($wtResult.success) {
+                        $worktreePath = $wtResult.worktree_path
+                        $branchName = $wtResult.branch_name
+                        Write-Status "Worktree: $worktreePath" -Type Info
+                    } else {
+                        Write-Status "Worktree failed: $($wtResult.message)" -Type Warn
+                    }
                 }
             }
 
             # Use execution model from settings
-            $executionModel = if ($settings.execution?.model) { $settings.execution.model } else { $providerConfig.default_model }
+            $executionModel = if ($settings.execution?.model) { $settings.execution.model } else { 'Opus' }
             $executionModelName = Resolve-ProviderModelId -ModelAlias $executionModel
 
             # Build execution prompt
@@ -1419,6 +1772,7 @@ Work on this task autonomously. When complete, ensure you call task_mark_done vi
 
                 # Check completion
                 $completionCheck = Test-TaskCompletion -TaskId $task.id
+                Write-Diag "Completion check: completed=$($completionCheck.completed)"
                 if ($completionCheck.completed) {
                     Write-Status "Task completed!" -Type Complete
                     Invoke-SessionIncrementCompleted -Arguments @{} | Out-Null
@@ -1451,9 +1805,32 @@ Work on this task autonomously. When complete, ensure you call task_mark_done vi
             # Clean up execution session
             try { Remove-ProviderSession -SessionId $executionSessionId -ProjectRoot $projectRoot | Out-Null } catch {}
 
+            } catch {
+                # Execution phase setup/run failed — log and recover the task
+                Write-Diag "Execution EXCEPTION: $($_.Exception.Message)"
+                Write-Status "Execution failed: $($_.Exception.Message)" -Type Error
+                Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Execution failed for $($task.name): $($_.Exception.Message)"
+                try {
+                    $inProgressDir = Join-Path $tasksBaseDir "in-progress"
+                    $todoDir = Join-Path $tasksBaseDir "todo"
+                    $taskFile = Get-ChildItem -Path $inProgressDir -Filter "*.json" -File -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Name -match $task.id.Substring(0,8) } | Select-Object -First 1
+                    if ($taskFile) {
+                        $taskData = Get-Content $taskFile.FullName -Raw | ConvertFrom-Json
+                        $taskData.status = 'todo'
+                        $taskData | ConvertTo-Json -Depth 20 | Set-Content (Join-Path $todoDir $taskFile.Name) -Encoding UTF8
+                        Remove-Item $taskFile.FullName -Force
+                        Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Recovered task $($task.name) back to todo"
+                    }
+                } catch { Write-Warning "Failed to recover task: $_" }
+                $taskSuccess = $false
+            }
+
             # Update process data
             $env:DOTBOT_CURRENT_TASK_ID = $null
             $env:CLAUDE_SESSION_ID = $null
+
+            Write-Diag "Task result: success=$taskSuccess"
 
             if ($taskSuccess) {
                 # Squash-merge task branch to main
@@ -1519,6 +1896,7 @@ Work on this task autonomously. When complete, ensure you call task_mark_done vi
                 }
 
                 $tasksProcessed++
+                Write-Diag "Tasks processed: $tasksProcessed"
                 $processData.tasks_completed = $tasksProcessed
                 $processData.heartbeat_status = "Completed: $($task.name)"
                 Write-ProcessFile -Id $procId -Data $processData
@@ -1547,15 +1925,46 @@ Work on this task autonomously. When complete, ensure you call task_mark_done vi
                         tasks_skipped = $state.state.tasks_skipped + 1
                     } | Out-Null
 
+                    Write-Diag "Consecutive failures: $newFailures (threshold=$consecutiveFailureThreshold)"
                     if ($newFailures -ge $consecutiveFailureThreshold) {
                         Write-Status "$consecutiveFailureThreshold consecutive failures - stopping" -Type Error
+                        Write-Diag "EXIT: Consecutive failure threshold reached"
                         break
                     }
                 } catch {}
             }
 
+            } catch {
+                # Per-task error recovery — catches anything that escapes the inner try/catches
+                Write-Diag "Per-task EXCEPTION: $($_.Exception.Message)"
+                Write-Status "Task failed unexpectedly: $($_.Exception.Message)" -Type Error
+                Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Task $($task.name) failed: $($_.Exception.Message)"
+
+                # Recover task: move from whatever state back to todo
+                try {
+                    foreach ($searchDir in @('analysing', 'in-progress')) {
+                        $dir = Join-Path $tasksBaseDir $searchDir
+                        $found = Get-ChildItem -Path $dir -Filter "*.json" -File -ErrorAction SilentlyContinue |
+                            Where-Object { $_.Name -match $task.id.Substring(0,8) } | Select-Object -First 1
+                        if ($found) {
+                            $taskData = Get-Content $found.FullName -Raw | ConvertFrom-Json
+                            $taskData.status = 'todo'
+                            $todoDir = Join-Path $tasksBaseDir "todo"
+                            $taskData | ConvertTo-Json -Depth 20 | Set-Content (Join-Path $todoDir $found.Name) -Encoding UTF8
+                            Remove-Item $found.FullName -Force
+                            Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Recovered task $($task.name) back to todo"
+                            break
+                        }
+                    }
+                } catch { Write-Warning "Failed to recover task: $_" }
+            }
+
             # Continue to next task?
-            if (-not $Continue) { break }
+            Write-Diag "Continue check: Continue=$Continue"
+            if (-not $Continue) {
+                Write-Diag "EXIT: Continue not set"
+                break
+            }
 
             # Clear task ID for next iteration
             $TaskId = $null
@@ -1563,19 +1972,29 @@ Work on this task autonomously. When complete, ensure you call task_mark_done vi
             $processData.task_name = $null
 
             # Delay between tasks
-            Write-Phosphor "Waiting 3s before next task..." -Color Bezel
+            Write-Status "Waiting 3s before next task..." -Type Info
             for ($i = 0; $i -lt 3; $i++) {
                 Start-Sleep -Seconds 1
                 if (Test-ProcessStopSignal -Id $procId) { break }
             }
 
             if (Test-ProcessStopSignal -Id $procId) {
+                Write-Diag "EXIT: Stop signal after task completion"
                 $processData.status = 'stopped'
                 $processData.failed_at = (Get-Date).ToUniversalTime().ToString("o")
                 Write-ProcessFile -Id $procId -Data $processData
                 break
             }
         }
+    } catch {
+        # Process-level error handler — catches anything that escapes the per-task try/catch
+        Write-Diag "PROCESS-LEVEL EXCEPTION: $($_.Exception.Message)"
+        $processData.status = 'failed'
+        $processData.error = $_.Exception.Message
+        $processData.failed_at = (Get-Date).ToUniversalTime().ToString("o")
+        Write-ProcessFile -Id $procId -Data $processData
+        Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Process failed: $($_.Exception.Message)"
+        try { Write-Status "Process failed: $($_.Exception.Message)" -Type Error } catch { Write-Host "Process failed: $($_.Exception.Message)" }
     } finally {
         # Final cleanup
         if ($processData.status -eq 'running') {
@@ -1583,7 +2002,8 @@ Work on this task autonomously. When complete, ensure you call task_mark_done vi
             $processData.completed_at = (Get-Date).ToUniversalTime().ToString("o")
         }
         Write-ProcessFile -Id $procId -Data $processData
-        Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Process $procId finished ($($processData.status))"
+        Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Process $procId finished ($($processData.status), tasks_completed: $tasksProcessed)"
+        Write-Diag "=== Process ending: status=$($processData.status) tasksProcessed=$tasksProcessed ==="
 
         try { Invoke-SessionUpdate -Arguments @{ status = "stopped" } | Out-Null } catch {}
     }
@@ -1602,210 +2022,114 @@ elseif ($Type -eq 'kickstart') {
 
     $productDir = Join-Path $botRoot "workspace\product"
 
+    # Ensure repo has at least one commit (required for worktrees and phase commits)
+    $hasCommits = git -C $projectRoot rev-parse --verify HEAD 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Status "Creating initial commit..." -Type Process
+        git -C $projectRoot add .bot/ 2>$null
+        git -C $projectRoot commit -m "chore: initialize dotbot" --allow-empty 2>$null
+        Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Created initial git commit (repo had no commits)"
+    }
+
     try {
-        # ===== Phase 0: Interview loop (if requested) =====
-        if ($NeedsInterview) {
-            $processData.heartbeat_status = "Phase 0: Interviewing for requirements"
-            Write-ProcessFile -Id $procId -Data $processData
-            Write-ProcessActivity -Id $procId -ActivityType "init" -Message "Phase 0 — interviewing for requirements..."
-            Write-Header "Phase 0: Interview"
-
-            # Load interview prompt template
-            $interviewWorkflowPath = Join-Path $botRoot "prompts\workflows\00-kickstart-interview.md"
-            $interviewWorkflow = ""
-            if (Test-Path $interviewWorkflowPath) {
-                $interviewWorkflow = Get-Content $interviewWorkflowPath -Raw
-            }
-
-            # Check for briefing files
-            $briefingDir = Join-Path $productDir "briefing"
-            $interviewFileRefs = ""
-            if (Test-Path $briefingDir) {
-                $briefingFiles = Get-ChildItem -Path $briefingDir -File
-                if ($briefingFiles.Count -gt 0) {
-                    $interviewFileRefs = "`n`nBriefing files have been saved to the briefing/ directory. Read and use these for context:`n"
-                    foreach ($bf in $briefingFiles) {
-                        $interviewFileRefs += "- $($bf.FullName)`n"
-                    }
+        # ===== Kickstart phase pipeline (config-driven) =====
+        $kickstartPhases = $settings.kickstart.phases
+        if (-not $kickstartPhases -or $kickstartPhases.Count -eq 0) {
+            # Fallback: default inline phases if config is missing (backward compat)
+            $kickstartPhases = @(
+                @{
+                    id = "product-docs"
+                    name = "Product Documents"
+                    workflow = "01-plan-product.md"
+                    required_outputs = @("mission.md", "tech-stack.md", "entity-model.md")
+                    front_matter_docs = @("mission.md", "tech-stack.md", "entity-model.md")
+                    post_script = $null
+                    commit_paths = @("workspace/product/")
+                    commit_message = "chore(kickstart): phase 1 — product documents"
+                },
+                @{
+                    id = "task-groups"
+                    name = "Task Groups"
+                    workflow = "03a-plan-task-groups.md"
+                    required_outputs = @("task-groups.json")
+                    front_matter_docs = $null
+                    post_script = "post-phase-task-groups.ps1"
+                    commit_paths = @("workspace/product/")
+                    commit_message = "chore(kickstart): phase 2a — task groups and roadmap"
+                },
+                @{
+                    id = "expand-tasks"
+                    name = "Task Group Expansion"
+                    script = "expand-task-groups.ps1"
+                    commit_paths = @("workspace/tasks/")
+                    commit_message = "chore(kickstart): phase 2b — expanded task roadmap"
                 }
-            }
-
-            $interviewRound = 0
-            $allQandA = @()
-            $questionsPath = Join-Path $productDir "clarification-questions.json"
-            $summaryPath = Join-Path $productDir "interview-summary.md"
-
-            # Use Opus for interview quality
-            $interviewModel = Resolve-ProviderModelId -ModelAlias 'Opus'
-
-            do {
-                $interviewRound++
-
-                # Build previous Q&A context
-                $previousContext = ""
-                if ($allQandA.Count -gt 0) {
-                    $previousContext = "`n`n## Previous Interview Rounds`n"
-                    foreach ($round in $allQandA) {
-                        $previousContext += "`n### Round $($round.round)`n"
-                        foreach ($qa in $round.pairs) {
-                            $previousContext += "**Q:** $($qa.question)`n**A:** $($qa.answer)`n`n"
-                        }
-                    }
-                }
-
-                # Clean up any previous round's files
-                if (Test-Path $questionsPath) { Remove-Item $questionsPath -Force }
-                if (Test-Path $summaryPath) { Remove-Item $summaryPath -Force }
-
-                $interviewPrompt = @"
-$interviewWorkflow
-
-## User's Project Description
-
-$Prompt
-$interviewFileRefs
-$previousContext
-
-## Instructions
-
-Review all context above. Decide whether to write clarification-questions.json (more questions needed) or interview-summary.md (all clear). Write exactly one file to .bot/workspace/product/.
-"@
-
-                Write-Status "Interview round $interviewRound..." -Type Process
-                Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Interview round $interviewRound"
-
-                $interviewSessionId = New-ProviderSession
-                $streamArgs = @{
-                    Prompt = $interviewPrompt
-                    Model = $interviewModel
-                    SessionId = $interviewSessionId
-                    PersistSession = $false
-                }
-                if ($ShowDebug) { $streamArgs['ShowDebugJson'] = $true }
-                if ($ShowVerbose) { $streamArgs['ShowVerbose'] = $true }
-
-                Invoke-ProviderStream @streamArgs
-
-                # Check what Opus wrote
-                if (Test-Path $summaryPath) {
-                    Write-Status "Interview complete — summary written" -Type Complete
-                    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Interview complete after $interviewRound round(s)"
-
-                    # Add YAML front matter to interview summary
-                    $meta = @{
-                        generated_at = (Get-Date).ToUniversalTime().ToString("o")
-                        model = $interviewModel
-                        process_id = $procId
-                        phase = "phase-0-interview"
-                        generator = "dotbot-kickstart"
-                    }
-                    Add-YamlFrontMatter -FilePath $summaryPath -Metadata $meta
-
-                    break
-                }
-
-                if (Test-Path $questionsPath) {
-                    try {
-                        $questionsRaw = Get-Content $questionsPath -Raw
-                        $questionsData = $questionsRaw | ConvertFrom-Json
-                        $questions = $questionsData.questions
-                    } catch {
-                        Write-Status "Failed to parse questions JSON: $($_.Exception.Message)" -Type Warn
-                        break
-                    }
-
-                    Write-Status "Round ${interviewRound}: $($questions.Count) question(s) — waiting for user" -Type Info
-
-                    # Set process to needs-input
-                    $processData.status = 'needs-input'
-                    $processData.pending_questions = $questionsData
-                    $processData.interview_round = $interviewRound
-                    $processData.heartbeat_status = "Waiting for interview answers (round $interviewRound)"
-                    Write-ProcessFile -Id $procId -Data $processData
-                    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Waiting for user answers (round $interviewRound, $($questions.Count) questions)"
-
-                    # Poll for answers file
-                    $answersPath = Join-Path $productDir "clarification-answers.json"
-                    if (Test-Path $answersPath) { Remove-Item $answersPath -Force }
-
-                    while (-not (Test-Path $answersPath)) {
-                        if (Test-ProcessStopSignal -Id $procId) {
-                            Write-Status "Stop signal received during interview" -Type Error
-                            $processData.status = 'stopped'
-                            $processData.failed_at = (Get-Date).ToUniversalTime().ToString("o")
-                            $processData.pending_questions = $null
-                            Write-ProcessFile -Id $procId -Data $processData
-                            throw "Process stopped by user during interview"
-                        }
-                        Start-Sleep -Seconds 2
-                    }
-
-                    # Read answers
-                    try {
-                        $answersRaw = Get-Content $answersPath -Raw
-                        $answersData = $answersRaw | ConvertFrom-Json
-                    } catch {
-                        Write-Status "Failed to parse answers JSON: $($_.Exception.Message)" -Type Warn
-                        break
-                    }
-
-                    # Check if user skipped
-                    if ($answersData.skipped -eq $true) {
-                        Write-Status "User skipped interview" -Type Info
-                        Write-ProcessActivity -Id $procId -ActivityType "text" -Message "User skipped interview at round $interviewRound"
-                        # Clean up
-                        Remove-Item $questionsPath -Force -ErrorAction SilentlyContinue
-                        Remove-Item $answersPath -Force -ErrorAction SilentlyContinue
-                        break
-                    }
-
-                    # Accumulate Q&A for next round
-                    $allQandA += @{
-                        round = $interviewRound
-                        pairs = @($answersData.answers)
-                    }
-
-                    Write-Status "Answers received for round $interviewRound" -Type Success
-                    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Received answers for round $interviewRound"
-
-                    # Clean up for next iteration
-                    Remove-Item $questionsPath -Force -ErrorAction SilentlyContinue
-                    Remove-Item $answersPath -Force -ErrorAction SilentlyContinue
-
-                    # Reset process status
-                    $processData.status = 'running'
-                    $processData.pending_questions = $null
-                    $processData.interview_round = $null
-                    $processData.heartbeat_status = "Phase 0: Processing interview answers"
-                    Write-ProcessFile -Id $procId -Data $processData
-                } else {
-                    # Neither file written — something went wrong, proceed without
-                    Write-Status "Interview round produced no output — proceeding" -Type Warn
-                    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Interview round $interviewRound produced no output — skipping"
-                    break
-                }
-            } while ($true)
-
-            # Ensure status is running for Phase 1
-            $processData.status = 'running'
-            $processData.pending_questions = $null
-            $processData.interview_round = $null
-            Write-ProcessFile -Id $procId -Data $processData
+            )
         }
 
-        # ===== Phase 1: Create product documents =====
-        $processData.heartbeat_status = "Phase 1: Creating product documents"
+        # ===== Build phase tracking array from config =====
+        $hasInterviewPhase = $kickstartPhases | Where-Object { $_.type -eq 'interview' }
+        if ($NeedsInterview -and -not $hasInterviewPhase) {
+            # Prepend a synthetic interview phase for tracking
+            $processData.phases = @(@{
+                id = "interview"; name = "Interview"; type = "interview"
+                status = "pending"; started_at = $null; completed_at = $null; error = $null
+            })
+        } else {
+            $processData.phases = @()
+        }
+        # Append all config-driven phases
+        $processData.phases += @($kickstartPhases | ForEach-Object {
+            @{
+                id = $_.id; name = $_.name
+                type = if ($_.type) { $_.type } else { "llm" }
+                status = "pending"; started_at = $null; completed_at = $null; error = $null
+            }
+        })
         Write-ProcessFile -Id $procId -Data $processData
-        Write-ProcessActivity -Id $procId -ActivityType "init" -Message "Phase 1 — creating product documents..."
-        Write-Header "Phase 1: Product Documents"
 
-        $workflowContent = ""
-        $workflowPath = Join-Path $botRoot "prompts\workflows\01-plan-product.md"
-        if (Test-Path $workflowPath) {
-            $workflowContent = Get-Content $workflowPath -Raw
+        # ===== Validate FromPhase =====
+        $fromPhaseActive = $false
+        if ($FromPhase) {
+            $validPhaseIds = @($processData.phases | ForEach-Object { $_.id })
+            if ($FromPhase -notin $validPhaseIds) {
+                Write-Status "Unknown phase '$FromPhase' — running all phases" -Type Warn
+                $FromPhase = $null
+            } else {
+                $fromPhaseActive = $true
+            }
         }
 
-        # Check for briefing files
+        # ===== Phase 0: Interview (backward compat for profiles without interview-type phase) =====
+        if ($NeedsInterview -and -not $hasInterviewPhase) {
+            $interviewPhaseIdx = @($processData.phases | ForEach-Object { $_.id }).IndexOf('interview')
+
+            if ($fromPhaseActive -and $FromPhase -ne 'interview') {
+                $processData.phases[$interviewPhaseIdx].status = 'skipped'
+                $processData.phases[$interviewPhaseIdx].completed_at = 'prior-run'
+                Write-ProcessFile -Id $procId -Data $processData
+            } else {
+                if ($fromPhaseActive) { $fromPhaseActive = $false }
+                $processData.phases[$interviewPhaseIdx].status = 'running'
+                $processData.phases[$interviewPhaseIdx].started_at = (Get-Date).ToUniversalTime().ToString("o")
+                Write-ProcessFile -Id $procId -Data $processData
+
+                $processData.heartbeat_status = "Phase 0: Interviewing for requirements"
+                Write-ProcessFile -Id $procId -Data $processData
+                Write-ProcessActivity -Id $procId -ActivityType "init" -Message "Phase 0 — interviewing for requirements..."
+                Write-Header "Phase 0: Interview"
+
+                Invoke-InterviewLoop -ProcessId $procId -ProcessData $processData `
+                    -BotRoot $botRoot -ProductDir $productDir -UserPrompt $Prompt `
+                    -ShowDebugJson:$ShowDebug -ShowVerboseOutput:$ShowVerbose
+
+                $processData.phases[$interviewPhaseIdx].status = 'completed'
+                $processData.phases[$interviewPhaseIdx].completed_at = (Get-Date).ToUniversalTime().ToString("o")
+                Write-ProcessFile -Id $procId -Data $processData
+            }
+        }
+
+        # Build briefing context once (shared across LLM phases)
         $briefingDir = Join-Path $productDir "briefing"
         $fileRefs = ""
         if (Test-Path $briefingDir) {
@@ -1818,7 +2142,7 @@ Review all context above. Decide whether to write clarification-questions.json (
             }
         }
 
-        # Check for interview summary from Phase 0
+        # Build interview context once (shared across LLM phases)
         $interviewContext = ""
         $interviewSummaryPath = Join-Path $productDir "interview-summary.md"
         if (Test-Path $interviewSummaryPath) {
@@ -1830,13 +2154,167 @@ An interview-summary.md file exists in .bot/workspace/product/ containing the us
 "@
         }
 
-        $phase1Prompt = @"
-You are a product planning assistant for the dotbot autonomous development system.
+        $phaseNum = 1
+        foreach ($phase in $kickstartPhases) {
+            $phaseName = $phase.name
+            $trackIdx = @($processData.phases | ForEach-Object { $_.id }).IndexOf($phase.id)
 
-Your task is to create the foundational product documents for a new project based on the user's description.
+            # --- FromPhase skip logic ---
+            if ($fromPhaseActive -and $phase.id -ne $FromPhase) {
+                if ($trackIdx -ge 0) {
+                    $processData.phases[$trackIdx].status = 'skipped'
+                    $processData.phases[$trackIdx].completed_at = 'prior-run'
+                    Write-ProcessFile -Id $procId -Data $processData
+                }
+                Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Skipping phase $phaseNum ($phaseName): before resume point"
+                Write-Status "Skipping phase $phaseNum ($phaseName) — before resume point" -Type Info
+                $phaseNum++; continue
+            }
+            if ($fromPhaseActive) { $fromPhaseActive = $false }
 
-Follow this workflow for guidance on document structure:
-$workflowContent
+            # --- Condition check ---
+            if ($phase.condition) {
+                if ($phase.condition -match '^file_exists:(.+)$') {
+                    $checkPath = Join-Path $botRoot $matches[1]
+                    if (-not (Test-Path $checkPath)) {
+                        if ($trackIdx -ge 0) {
+                            $processData.phases[$trackIdx].status = 'skipped'
+                            $processData.phases[$trackIdx].completed_at = (Get-Date).ToUniversalTime().ToString("o")
+                            Write-ProcessFile -Id $procId -Data $processData
+                        }
+                        Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Skipping phase $phaseNum ($phaseName): condition not met ($($phase.condition))"
+                        Write-Status "Skipping phase $phaseNum ($phaseName) — condition not met" -Type Info
+                        $phaseNum++; continue
+                    }
+                }
+            }
+
+            # Determine phase type
+            $phaseType = if ($phase.type) { $phase.type } else { "llm" }
+
+            # Mark phase as running
+            if ($trackIdx -ge 0) {
+                $processData.phases[$trackIdx].status = 'running'
+                $processData.phases[$trackIdx].started_at = (Get-Date).ToUniversalTime().ToString("o")
+            }
+            $processData.heartbeat_status = "Phase ${phaseNum}: $phaseName"
+            Write-ProcessFile -Id $procId -Data $processData
+            Write-ProcessActivity -Id $procId -ActivityType "init" -Message "Phase $phaseNum — $($phaseName.ToLower())..."
+            Write-Header "Phase ${phaseNum}: $phaseName"
+
+            if ($phaseType -eq "workflow") {
+                # --- Workflow phase: spawn child process to execute pending tasks ---
+                if (-not $AutoWorkflow) {
+                    if ($trackIdx -ge 0) {
+                        $processData.phases[$trackIdx].status = 'skipped'
+                        $processData.phases[$trackIdx].completed_at = (Get-Date).ToUniversalTime().ToString("o")
+                        Write-ProcessFile -Id $procId -Data $processData
+                    }
+                    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Skipping workflow phase $phaseNum ($phaseName): auto-execute not enabled"
+                    Write-Status "Skipping workflow phase (auto-execute not enabled)" -Type Info
+                    $phaseNum++; continue
+                }
+
+                $lpPath = Join-Path $botRoot "systems\runtime\launch-process.ps1"
+                $wfDesc = if ($phaseName) { $phaseName } else { "Execute tasks" }
+                $wfArgs = @("-NoProfile", "-File", $lpPath, "-Type", "workflow", "-Continue", "-NoWait", "-Description", "`"$wfDesc`"")
+                $wfProc = Start-Process pwsh -ArgumentList $wfArgs -WorkingDirectory $projectRoot -WindowStyle Normal -PassThru
+
+                Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Launched workflow process (PID: $($wfProc.Id))"
+                Write-Status "Launched workflow process (PID: $($wfProc.Id))" -Type Process
+
+                # Wait for child process to exit, maintaining heartbeat
+                while (-not $wfProc.HasExited) {
+                    Start-Sleep -Seconds 5
+                    $processData.last_heartbeat = (Get-Date).ToUniversalTime().ToString("o")
+                    $processData.heartbeat_status = "Waiting: $wfDesc"
+                    Write-ProcessFile -Id $procId -Data $processData
+                    if (Test-ProcessStopSignal -Id $procId) {
+                        try { $wfProc.Kill() } catch {}
+                        break
+                    }
+                }
+
+                Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Workflow phase complete (exit code: $($wfProc.ExitCode))"
+                Write-Status "Workflow phase complete" -Type Complete
+
+                # Log child's diagnostic file for traceability
+                $childDiag = Get-ChildItem $controlDir -Filter "diag-*.log" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                if ($childDiag) {
+                    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Child diag log: $($childDiag.FullName)"
+                }
+
+                # Check for remaining unprocessed tasks
+                $pendingTasks = @(Get-ChildItem (Join-Path $botRoot "workspace\tasks\todo") -Filter "*.json" -File -ErrorAction SilentlyContinue)
+                $inProgressTasks = @(Get-ChildItem (Join-Path $botRoot "workspace\tasks\in-progress") -Filter "*.json" -File -ErrorAction SilentlyContinue)
+                $analysingTasks = @(Get-ChildItem (Join-Path $botRoot "workspace\tasks\analysing") -Filter "*.json" -File -ErrorAction SilentlyContinue)
+                $analysedTasks = @(Get-ChildItem (Join-Path $botRoot "workspace\tasks\analysed") -Filter "*.json" -File -ErrorAction SilentlyContinue)
+
+                $remainingCount = $pendingTasks.Count + $inProgressTasks.Count + $analysingTasks.Count + $analysedTasks.Count
+
+                # Retry workflow if tasks remain unprocessed (up to 2 retries)
+                $wfRetries = 0
+                $maxWfRetries = 2
+                while ($remainingCount -gt 0 -and $wfRetries -lt $maxWfRetries) {
+                    $wfRetries++
+                    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Retrying workflow phase (attempt $wfRetries/$maxWfRetries, $remainingCount tasks remaining)"
+                    Write-Status "Retrying workflow phase ($remainingCount tasks remaining, attempt $wfRetries/$maxWfRetries)..." -Type Process
+
+                    $wfProc = Start-Process pwsh -ArgumentList $wfArgs -WorkingDirectory $projectRoot -WindowStyle Normal -PassThru
+
+                    while (-not $wfProc.HasExited) {
+                        Start-Sleep -Seconds 5
+                        $processData.last_heartbeat = (Get-Date).ToUniversalTime().ToString("o")
+                        $processData.heartbeat_status = "Retry $wfRetries`: $wfDesc"
+                        Write-ProcessFile -Id $procId -Data $processData
+                        if (Test-ProcessStopSignal -Id $procId) {
+                            try { $wfProc.Kill() } catch {}
+                            break
+                        }
+                    }
+
+                    # Re-check remaining tasks
+                    $pendingTasks = @(Get-ChildItem (Join-Path $botRoot "workspace\tasks\todo") -Filter "*.json" -File -ErrorAction SilentlyContinue)
+                    $inProgressTasks = @(Get-ChildItem (Join-Path $botRoot "workspace\tasks\in-progress") -Filter "*.json" -File -ErrorAction SilentlyContinue)
+                    $analysingTasks = @(Get-ChildItem (Join-Path $botRoot "workspace\tasks\analysing") -Filter "*.json" -File -ErrorAction SilentlyContinue)
+                    $analysedTasks = @(Get-ChildItem (Join-Path $botRoot "workspace\tasks\analysed") -Filter "*.json" -File -ErrorAction SilentlyContinue)
+                    $remainingCount = $pendingTasks.Count + $inProgressTasks.Count + $analysingTasks.Count + $analysedTasks.Count
+                }
+
+                if ($remainingCount -gt 0) {
+                    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "WARNING: $remainingCount task(s) still pending after $($wfRetries + 1) workflow attempt(s)"
+                    Write-Status "Warning: $remainingCount tasks still pending after $($wfRetries + 1) workflow attempt(s)" -Type Warn
+                }
+
+            } elseif ($phaseType -eq "interview") {
+                # --- Interview phase: run interview loop at this point in the pipeline ---
+                if (-not $NeedsInterview) {
+                    if ($trackIdx -ge 0) {
+                        $processData.phases[$trackIdx].status = 'skipped'
+                        $processData.phases[$trackIdx].completed_at = (Get-Date).ToUniversalTime().ToString("o")
+                        Write-ProcessFile -Id $procId -Data $processData
+                    }
+                    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Skipping interview phase $phaseNum ($phaseName): not requested"
+                    Write-Status "Skipping interview phase (not requested)" -Type Info
+                    $phaseNum++; continue
+                }
+
+                Invoke-InterviewLoop -ProcessId $procId -ProcessData $processData `
+                    -BotRoot $botRoot -ProductDir $productDir -UserPrompt $Prompt `
+                    -ShowDebugJson:$ShowDebug -ShowVerboseOutput:$ShowVerbose
+
+            } elseif ($phase.script) {
+                # --- Script-only phase (no LLM) ---
+                $scriptPath = Join-Path $botRoot "systems\runtime\$($phase.script)"
+                & $scriptPath -BotRoot $botRoot -Model $claudeModelName -ProcessId $procId
+            } else {
+                # --- LLM phase ---
+                $wfContent = ""
+                $wfPath = Join-Path $botRoot "prompts\workflows\$($phase.workflow)"
+                if (Test-Path $wfPath) { $wfContent = Get-Content $wfPath -Raw }
+
+                $phasePrompt = @"
+$wfContent
 
 User's project description:
 $Prompt
@@ -1846,302 +2324,92 @@ $interviewContext
 Instructions:
 1. Read any briefing files listed above and any existing project files (README.md, etc.) for additional context
 2. If an interview-summary.md file exists in .bot/workspace/product/, read it carefully — it contains clarified requirements from the user
-3. Create these product documents directly by writing files to .bot/workspace/product/:
-   - mission.md - What the product is, core principles, goals. MUST start with a section titled "Executive Summary" as the first heading.
-   - tech-stack.md - Technologies, versions, infrastructure decisions
-   - entity-model.md - Data model, entities, relationships. Include a Mermaid.js erDiagram block showing entities and their relationships visually.
-4. Do NOT create tasks, ask questions, or use task management tools. Just create the documents directly.
-5. Write comprehensive, well-structured markdown documents based on what you know from the user's description and any attached files.
-6. Make reasonable inferences where details are missing - the user can refine later.
+3. Follow the workflow above to create the required outputs. Write files to .bot/workspace/product/
+4. Do NOT create tasks or use task management tools unless the workflow explicitly instructs you to
+5. Write comprehensive, well-structured content based on the user's description and any attached files
+6. Make reasonable inferences where details are missing — the user can refine later
 
-IMPORTANT: The mission.md file MUST begin with an "Executive Summary" section (## Executive Summary) as the very first content after the title. This is required for the UI to detect that product planning is complete.
+IMPORTANT: If creating mission.md, it MUST begin with ## Executive Summary as the first content after the title. This is required for the UI to detect that product planning is complete.
 "@
 
-        $streamArgs = @{
-            Prompt = $phase1Prompt
-            Model = $claudeModelName
-            SessionId = $claudeSessionId
-            PersistSession = $false
-        }
-        if ($ShowDebug) { $streamArgs['ShowDebugJson'] = $true }
-        if ($ShowVerbose) { $streamArgs['ShowVerbose'] = $true }
-
-        Invoke-ProviderStream @streamArgs
-
-        # Verify product docs were created
-        $hasDocs = (Test-Path (Join-Path $productDir "mission.md")) -and
-                   (Test-Path (Join-Path $productDir "tech-stack.md")) -and
-                   (Test-Path (Join-Path $productDir "entity-model.md"))
-
-        if (-not $hasDocs) {
-            throw "Phase 1 failed: product documents were not created"
-        }
-
-        # Add YAML front matter to Phase 1 product docs
-        $phase1Meta = @{
-            generated_at = (Get-Date).ToUniversalTime().ToString("o")
-            model = $claudeModelName
-            process_id = $procId
-            phase = "phase-1-product-docs"
-            generator = "dotbot-kickstart"
-        }
-        foreach ($docName in @("mission.md", "tech-stack.md", "entity-model.md")) {
-            $docPath = Join-Path $productDir $docName
-            if (Test-Path $docPath) {
-                Add-YamlFrontMatter -FilePath $docPath -Metadata $phase1Meta
-            }
-        }
-
-        Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Phase 1 complete — product documents created"
-
-        # Checkpoint: commit product documents
-        Write-Status "Committing phase 1 artifacts..." -Type Info
-        git -C $projectRoot add .bot/workspace/product/ 2>$null
-        git -C $projectRoot commit --quiet -m "chore(kickstart): phase 1 — product documents" 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Phase 1 checkpoint committed"
-        } else {
-            Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Phase 1 checkpoint: nothing to commit"
-        }
-
-        # ===== Phase 2a: Generate task groups =====
-        $processData.heartbeat_status = "Phase 2a: Planning task groups"
-        Write-ProcessFile -Id $procId -Data $processData
-        Write-ProcessActivity -Id $procId -ActivityType "init" -Message "Phase 2a — planning task groups..."
-        Write-Header "Phase 2a: Task Groups"
-
-        $groupsWorkflow = ""
-        $groupsWorkflowPath = Join-Path $botRoot "prompts\workflows\03a-plan-task-groups.md"
-        if (Test-Path $groupsWorkflowPath) {
-            $groupsWorkflow = Get-Content $groupsWorkflowPath -Raw
-        }
-
-        $phase2aPrompt = @"
-$groupsWorkflow
-
-Work autonomously. Do not ask questions. Read the product documents and create task-groups.json.
-
-CRITICAL: Your ONLY job is to create task-groups.json in .bot/workspace/product/.
-Do NOT read other workflow files from the prompts/workflows/ directory.
-Do NOT use task management MCP tools. Do NOT create individual tasks.
-Do NOT read or follow 03-plan-roadmap.md or 04-new-tasks.md — those are for other process types.
-"@
-
-        # New session for Phase 2a
-        $claudeSessionId = New-ProviderSession
-        $streamArgs = @{
-            Prompt = $phase2aPrompt
-            Model = $claudeModelName
-            SessionId = $claudeSessionId
-            PersistSession = $false
-        }
-        if ($ShowDebug) { $streamArgs['ShowDebugJson'] = $true }
-        if ($ShowVerbose) { $streamArgs['ShowVerbose'] = $true }
-
-        Invoke-ProviderStream @streamArgs
-
-        # Verify task-groups.json was created
-        $groupsPath = Join-Path $productDir "task-groups.json"
-        if (-not (Test-Path $groupsPath)) {
-            throw "Phase 2a failed: task-groups.json was not created"
-        }
-
-        # Inject metadata into task-groups.json
-        $groupsJson = Get-Content $groupsPath -Raw | ConvertFrom-Json
-        $groupsJson | Add-Member -NotePropertyName "generated_at" -NotePropertyValue (Get-Date).ToUniversalTime().ToString("o") -Force
-        $groupsJson | Add-Member -NotePropertyName "model" -NotePropertyValue $claudeModelName -Force
-        $groupsJson | Add-Member -NotePropertyName "process_id" -NotePropertyValue $procId -Force
-        $groupsJson | Add-Member -NotePropertyName "generator" -NotePropertyValue "dotbot-kickstart" -Force
-        $groupsJson | ConvertTo-Json -Depth 10 | Set-Content -Path $groupsPath -Encoding utf8NoBOM
-
-        Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Phase 2a complete — task groups planned"
-
-        # ===== Generate roadmap-overview.md (deterministic, no LLM) =====
-        try {
-            $costDefaults = @{ hourly_rate = 50; ai_cost_per_task = 0.50; ai_speedup_factor = 10; currency = "USD" }
-            $costConfig = if ($settings.costs) { $settings.costs } else { $costDefaults }
-            $hourlyRate = if ($costConfig.hourly_rate) { [decimal]$costConfig.hourly_rate } else { 50 }
-            $aiCostPerTask = if ($costConfig.ai_cost_per_task) { [decimal]$costConfig.ai_cost_per_task } else { 0.50 }
-            $aiSpeedupFactor = if ($costConfig.ai_speedup_factor) { [decimal]$costConfig.ai_speedup_factor } else { 10 }
-            $currency = if ($costConfig.currency) { $costConfig.currency } else { "USD" }
-
-            $groupsData = Get-Content $groupsPath -Raw | ConvertFrom-Json
-            $sortedGroups = $groupsData.groups | Sort-Object { $_.order }
-
-            $totalEffortDays = ($sortedGroups | ForEach-Object { if ($_.effort_days) { $_.effort_days } else { 3 } } | Measure-Object -Sum).Sum
-            $totalTasks = ($sortedGroups | ForEach-Object { $_.estimated_task_count } | Measure-Object -Sum).Sum
-
-            $roadmap = [System.Collections.ArrayList]::new()
-            [void]$roadmap.Add("---")
-            [void]$roadmap.Add("generated_at: `"$((Get-Date).ToUniversalTime().ToString("o"))`"")
-            [void]$roadmap.Add("model: `"$claudeModelName`"")
-            [void]$roadmap.Add("process_id: `"$procId`"")
-            [void]$roadmap.Add("phase: `"phase-2b-roadmap`"")
-            [void]$roadmap.Add("generator: `"dotbot-kickstart`"")
-            [void]$roadmap.Add("---")
-            [void]$roadmap.Add("")
-            [void]$roadmap.Add("# Roadmap Overview")
-            [void]$roadmap.Add("")
-            [void]$roadmap.Add("**Project:** $($groupsData.project_name)")
-            [void]$roadmap.Add("**Generated:** $(Get-Date -Format 'yyyy-MM-dd')")
-            [void]$roadmap.Add("**Groups:** $($sortedGroups.Count) | **Estimated Tasks:** $totalTasks | **Effort:** $totalEffortDays developer-days")
-            [void]$roadmap.Add("")
-
-            # Executive summary from mission.md
-            $missionPath = Join-Path $productDir "mission.md"
-            if (Test-Path $missionPath) {
-                $missionContent = Get-Content $missionPath -Raw
-                if ($missionContent -match '(?ms)## Executive Summary\s*\n(.+?)(?=\n## |\z)') {
-                    [void]$roadmap.Add("## Executive Summary")
-                    [void]$roadmap.Add("")
-                    [void]$roadmap.Add($matches[1].Trim())
-                    [void]$roadmap.Add("")
-                } elseif ($missionContent -match '(?m)^#[^#].*\n+(.+)') {
-                    [void]$roadmap.Add("## Executive Summary")
-                    [void]$roadmap.Add("")
-                    [void]$roadmap.Add($matches[1].Trim())
-                    [void]$roadmap.Add("")
+                $claudeSessionId = New-ProviderSession
+                $streamArgs = @{
+                    Prompt = $phasePrompt
+                    Model = $claudeModelName
+                    SessionId = $claudeSessionId
+                    PersistSession = $false
                 }
+                if ($ShowDebug) { $streamArgs['ShowDebugJson'] = $true }
+                if ($ShowVerbose) { $streamArgs['ShowVerbose'] = $true }
+
+                Invoke-ProviderStream @streamArgs
             }
 
-            # Mermaid gantt chart — AI-assisted timeline
-            [void]$roadmap.Add("## Timeline (AI-Assisted)")
-            [void]$roadmap.Add("")
-            [void]$roadmap.Add('```mermaid')
-            [void]$roadmap.Add("gantt")
-            [void]$roadmap.Add("    title $($groupsData.project_name) — AI-Assisted Timeline")
-            [void]$roadmap.Add("    dateFormat YYYY-MM-DD")
-            [void]$roadmap.Add("    axisFormat %b %d")
-            [void]$roadmap.Add("")
-
-            $today = Get-Date
-            $groupEndDates = @{}
-
-            foreach ($group in $sortedGroups) {
-                $effortDays = if ($group.effort_days) { [int]$group.effort_days } else { 3 }
-                $aiDays = [math]::Ceiling($effortDays / $aiSpeedupFactor)
-                if ($aiDays -lt 1) { $aiDays = 1 }
-
-                # Determine start date based on dependencies
-                $startDate = $today
-                if ($group.depends_on -and $group.depends_on.Count -gt 0) {
-                    foreach ($depId in $group.depends_on) {
-                        if ($groupEndDates.ContainsKey($depId) -and $groupEndDates[$depId] -gt $startDate) {
-                            $startDate = $groupEndDates[$depId]
+            # --- Validation (skip for workflow/interview phase types) ---
+            if ($phaseType -notin @("workflow", "interview")) {
+                if ($phase.required_outputs) {
+                    foreach ($f in $phase.required_outputs) {
+                        if (-not (Test-Path (Join-Path $productDir $f))) {
+                            throw "Phase $phaseNum ($phaseName) failed: $f was not created"
                         }
                     }
+                } elseif ($phase.required_outputs_dir) {
+                    $dirPath = Join-Path $botRoot "workspace\$($phase.required_outputs_dir)"
+                    $minCount = if ($phase.min_output_count) { [int]$phase.min_output_count } else { 1 }
+                    $fileCount = if (Test-Path $dirPath) { (Get-ChildItem $dirPath -Filter "*.json" -File).Count } else { 0 }
+                    if ($fileCount -lt $minCount) {
+                        throw "Phase $phaseNum ($phaseName) failed: expected at least $minCount file(s) in $($phase.required_outputs_dir), found $fileCount"
+                    }
                 }
-
-                $endDate = $startDate.AddDays($aiDays)
-                $groupEndDates[$group.id] = $endDate
-
-                $startStr = $startDate.ToString("yyyy-MM-dd")
-                # Sanitize name for Mermaid (remove special chars)
-                $safeName = $group.name -replace '[:#]', ''
-
-                [void]$roadmap.Add("    section $safeName")
-                [void]$roadmap.Add("    $safeName :$($group.id), $startStr, ${aiDays}d")
             }
 
-            [void]$roadmap.Add('```')
-            [void]$roadmap.Add("")
-
-            # Human vs AI comparison table
-            [void]$roadmap.Add("## Human vs AI-Assisted Comparison")
-            [void]$roadmap.Add("")
-            [void]$roadmap.Add("| Group | Human (days) | AI (days) | Human Cost | AI Cost | Speedup |")
-            [void]$roadmap.Add("|-------|-------------|-----------|------------|---------|---------|")
-
-            $totalHumanDays = 0
-            $totalAiDays = 0
-            $totalHumanCost = [decimal]0
-            $totalAiCost = [decimal]0
-
-            foreach ($group in $sortedGroups) {
-                $effortDays = if ($group.effort_days) { [int]$group.effort_days } else { 3 }
-                $aiDays = [math]::Ceiling($effortDays / $aiSpeedupFactor)
-                if ($aiDays -lt 1) { $aiDays = 1 }
-                $taskCount = if ($group.estimated_task_count) { [int]$group.estimated_task_count } else { 3 }
-
-                $humanCost = [decimal]($effortDays * 8 * $hourlyRate)
-                $aiLaborCost = [decimal]($aiDays * 8 * $hourlyRate)
-                $aiApiCost = [decimal]($taskCount * $aiCostPerTask)
-                $groupAiCost = $aiLaborCost + $aiApiCost
-
-                $totalHumanDays += $effortDays
-                $totalAiDays += $aiDays
-                $totalHumanCost += $humanCost
-                $totalAiCost += $groupAiCost
-
-                $speedup = if ($aiDays -gt 0) { "{0:N1}x" -f ($effortDays / $aiDays) } else { "N/A" }
-                $safeName = $group.name -replace '\|', '/'
-
-                [void]$roadmap.Add("| $safeName | $effortDays | $aiDays | $currency $("{0:N0}" -f $humanCost) | $currency $("{0:N0}" -f $groupAiCost) | $speedup |")
+            # --- Front matter ---
+            if ($phase.front_matter_docs) {
+                $phaseMeta = @{
+                    generated_at = (Get-Date).ToUniversalTime().ToString("o")
+                    model = $claudeModelName
+                    process_id = $procId
+                    phase = "phase-$phaseNum-$($phase.id)"
+                    generator = "dotbot-kickstart"
+                }
+                foreach ($docName in $phase.front_matter_docs) {
+                    $docPath = Join-Path $productDir $docName
+                    if (Test-Path $docPath) {
+                        Add-YamlFrontMatter -FilePath $docPath -Metadata $phaseMeta
+                    }
+                }
             }
 
-            $totalSpeedup = if ($totalAiDays -gt 0) { "{0:N1}x" -f ($totalHumanDays / $totalAiDays) } else { "N/A" }
-            [void]$roadmap.Add("| **Total** | **$totalHumanDays** | **$totalAiDays** | **$currency $("{0:N0}" -f $totalHumanCost)** | **$currency $("{0:N0}" -f $totalAiCost)** | **$totalSpeedup** |")
-            [void]$roadmap.Add("")
-
-            $savings = $totalHumanCost - $totalAiCost
-            $savingsPercent = if ($totalHumanCost -gt 0) { [math]::Round(($savings / $totalHumanCost) * 100) } else { 0 }
-            [void]$roadmap.Add("**Estimated savings:** $currency $("{0:N0}" -f $savings) ($savingsPercent%)")
-            [void]$roadmap.Add("")
-
-            # Implementation groups detail
-            [void]$roadmap.Add("## Implementation Groups")
-            [void]$roadmap.Add("")
-
-            foreach ($group in $sortedGroups) {
-                $depStr = if ($group.depends_on -and $group.depends_on.Count -gt 0) {
-                    " | Depends on: $(($group.depends_on) -join ', ')"
-                } else { "" }
-
-                [void]$roadmap.Add("### $($group.order). $($group.name)")
-                [void]$roadmap.Add("")
-                [void]$roadmap.Add("$($group.description)")
-                [void]$roadmap.Add("")
-                $effortDays = if ($group.effort_days) { $group.effort_days } else { "?" }
-                [void]$roadmap.Add("- **Estimated tasks:** $($group.estimated_task_count) | **Effort:** $effortDays days$depStr")
-                [void]$roadmap.Add("")
+            # --- Post-script ---
+            if ($phase.post_script) {
+                $postPath = Join-Path $botRoot "systems\runtime\$($phase.post_script)"
+                & $postPath -BotRoot $botRoot -ProductDir $productDir -Settings $settings -Model $claudeModelName -ProcessId $procId
             }
 
-            $overviewPath = Join-Path $productDir "roadmap-overview.md"
-            $roadmap -join "`n" | Set-Content -Path $overviewPath -Encoding UTF8
-            Write-Status "Roadmap overview generated: $overviewPath" -Type Success
-        } catch {
-            Write-Status "Warning: could not generate roadmap overview: $($_.Exception.Message)" -Type Warn
-        }
+            # --- Git checkpoint ---
+            if ($phase.commit_paths) {
+                Write-Status "Committing phase $phaseNum artifacts..." -Type Info
+                foreach ($cp in $phase.commit_paths) {
+                    git -C $projectRoot add ".bot/$cp" 2>$null
+                }
+                $commitMsg = if ($phase.commit_message) { $phase.commit_message } else { "chore(kickstart): phase $phaseNum — $($phaseName.ToLower())" }
+                git -C $projectRoot commit --quiet -m $commitMsg 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Phase $phaseNum checkpoint committed"
+                } else {
+                    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Phase $phaseNum checkpoint: nothing to commit"
+                }
+            }
 
-        # Checkpoint: commit task groups + roadmap
-        Write-Status "Committing phase 2a artifacts..." -Type Info
-        git -C $projectRoot add .bot/workspace/product/ 2>$null
-        git -C $projectRoot commit --quiet -m "chore(kickstart): phase 2a — task groups and roadmap" 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Phase 2a checkpoint committed"
-        } else {
-            Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Phase 2a checkpoint: nothing to commit"
-        }
+            # Mark phase as completed
+            if ($trackIdx -ge 0) {
+                $processData.phases[$trackIdx].status = 'completed'
+                $processData.phases[$trackIdx].completed_at = (Get-Date).ToUniversalTime().ToString("o")
+                Write-ProcessFile -Id $procId -Data $processData
+            }
 
-        # ===== Phase 2b: Expand task groups =====
-        $processData.heartbeat_status = "Phase 2b: Expanding task groups into tasks"
-        Write-ProcessFile -Id $procId -Data $processData
-        Write-ProcessActivity -Id $procId -ActivityType "init" -Message "Phase 2b — expanding task groups..."
-        Write-Header "Phase 2b: Task Group Expansion"
-
-        $expandScript = Join-Path $botRoot "systems\runtime\expand-task-groups.ps1"
-        & $expandScript -BotRoot $botRoot -Model $claudeModelName -ProcessId $procId
-
-        Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Phase 2b complete — all task groups expanded"
-
-        # Checkpoint: commit expanded tasks
-        Write-Status "Committing phase 2b artifacts..." -Type Info
-        git -C $projectRoot add .bot/workspace/tasks/ 2>$null
-        git -C $projectRoot commit --quiet -m "chore(kickstart): phase 2b — expanded task roadmap" 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Phase 2b checkpoint committed"
-        } else {
-            Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Phase 2b checkpoint: nothing to commit"
+            Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Phase $phaseNum complete — $($phaseName.ToLower())"
+            $phaseNum++
         }
 
         # Done
@@ -2149,6 +2417,11 @@ Do NOT read or follow 03-plan-roadmap.md or 04-new-tasks.md — those are for ot
         $processData.completed_at = (Get-Date).ToUniversalTime().ToString("o")
         $processData.heartbeat_status = "Completed: $Description"
     } catch {
+        # Mark the current phase as failed if we have a tracking index
+        if ($trackIdx -ge 0 -and $processData.phases[$trackIdx].status -eq 'running') {
+            $processData.phases[$trackIdx].status = 'failed'
+            $processData.phases[$trackIdx].error = $_.Exception.Message
+        }
         $processData.status = 'failed'
         $processData.failed_at = (Get-Date).ToUniversalTime().ToString("o")
         $processData.error = $_.Exception.Message
@@ -2276,14 +2549,14 @@ elseif ($Type -in @('planning', 'commit', 'task-creation')) {
     # Determine workflow template
     $workflowFile = switch ($Type) {
         'planning'      { Join-Path $botRoot "prompts\workflows\03-plan-roadmap.md" }
-        'commit'        { Join-Path $botRoot "prompts\workflows\02-commit-and-push.md" }
-        'task-creation' { Join-Path $botRoot "prompts\workflows\04-new-tasks.md" }
+        'commit'        { Join-Path $botRoot "prompts\workflows\90-commit-and-push.md" }
+        'task-creation' { Join-Path $botRoot "prompts\workflows\91-new-tasks.md" }
     }
 
     $processData.workflow = switch ($Type) {
         'planning'      { "03-plan-roadmap.md" }
-        'commit'        { "02-commit-and-push.md" }
-        'task-creation' { "04-new-tasks.md" }
+        'commit'        { "90-commit-and-push.md" }
+        'task-creation' { "91-new-tasks.md" }
     }
 
     # Build prompt
@@ -2354,7 +2627,7 @@ $env:DOTBOT_CURRENT_PHASE = $null
 
 # Output process ID for caller to use
 Write-Host ""
-Write-Status "Process $procId finished with status: $($processData.status)" -Type Info
+try { Write-Status "Process $procId finished with status: $($processData.status)" -Type Info } catch { Write-Host "Process $procId finished with status: $($processData.status)" }
 
 # 5-second countdown before window closes
 Write-Host ""

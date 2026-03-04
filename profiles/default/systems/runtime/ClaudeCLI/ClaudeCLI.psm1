@@ -1,8 +1,13 @@
 using namespace System.Management.Automation
 
 # Import DotBotTheme for consistent colors
-Import-Module "$PSScriptRoot\..\modules\DotBotTheme.psm1" -Force
+if (-not (Get-Module DotBotTheme)) {
+    Import-Module "$PSScriptRoot\..\modules\DotBotTheme.psm1" -Force
+}
 $script:theme = Get-DotBotTheme
+
+# Import PathSanitizer for stripping absolute paths from activity log messages
+Import-Module (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) "systems\mcp\modules\PathSanitizer.psm1") -Force
 
 #region Helper Functions
 
@@ -45,10 +50,13 @@ function Write-ActivityLog {
     # Determine phase: parameter > environment variable > null (for backward compatibility)
     $effectivePhase = if ($Phase) { $Phase } elseif ($env:DOTBOT_CURRENT_PHASE) { $env:DOTBOT_CURRENT_PHASE } else { $null }
 
+    # Sanitize absolute paths from message before persisting
+    $sanitizedMessage = Remove-AbsolutePaths -Text $Message -ProjectRoot $global:DotbotProjectRoot
+
     $event = @{
         timestamp = (Get-Date).ToUniversalTime().ToString("o")
         type = $Type
-        message = $Message
+        message = $sanitizedMessage
         task_id = $env:DOTBOT_CURRENT_TASK_ID  # Always include, null when no task
         phase = $effectivePhase  # Include phase for filtering (null for backward compat)
     } | ConvertTo-Json -Compress

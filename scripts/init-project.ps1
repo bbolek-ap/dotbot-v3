@@ -5,13 +5,19 @@
 
 .DESCRIPTION
     Copies the default .bot structure to the current project directory.
-    Optionally installs a profile for tech-specific features.
+    Optionally installs profiles for workflow and tech-specific features.
     Checks for required dependencies (git is required; others warn-only).
     Creates .mcp.json with dotbot, Context7, and Playwright MCP servers.
     Installs gitleaks pre-commit hook if gitleaks is available.
 
+    Profiles have two types (declared in profile.yaml):
+      - workflow : changes HOW dotbot operates (at most one allowed)
+      - stack    : changes WHAT dotbot knows (composable, multiple allowed)
+    Stacks may declare 'extends: <parent>' to auto-include a parent stack.
+
 .PARAMETER Profile
-    Profile to install (e.g., 'dotnet'). Can be specified multiple times.
+    Profile(s) to install (e.g., 'dotnet', 'multi-repo,dotnet-blazor').
+    Accepts a comma-separated string or multiple -Profile values.
 
 .PARAMETER Force
     Overwrite existing .bot system files (preserves workspace data).
@@ -25,7 +31,11 @@
 
 .EXAMPLE
     init-project.ps1 -Profile dotnet
-    Installs base default + dotnet profile.
+    Installs base default + dotnet stack.
+
+.EXAMPLE
+    init-project.ps1 -Profile multi-repo,dotnet-blazor,dotnet-ef
+    Installs default -> multi-repo (workflow) -> dotnet (auto) -> dotnet-blazor -> dotnet-ef.
 #>
 
 [CmdletBinding()]
@@ -170,8 +180,8 @@ if ($DryRun) {
 # ---------------------------------------------------------------------------
 if ((Test-Path $BotDir) -and $Force) {
     Write-Status "Updating .bot system files (preserving workspace data)"
-    # Remove only system/config directories and root files -- never workspace/
-    $systemDirs = @("systems", "prompts", "hooks", "defaults", ".control")
+    # Remove only system/config directories and root files -- never workspace/ or .control/
+    $systemDirs = @("systems", "prompts", "hooks", "defaults")
     foreach ($dir in $systemDirs) {
         $dirPath = Join-Path $BotDir $dir
         if (Test-Path $dirPath) {
@@ -231,73 +241,277 @@ foreach ($dir in $workspaceDirs) {
 
 Write-Success "Created .bot directory structure"
 
-# Install profiles if specified
+# ---------------------------------------------------------------------------
+# Profile taxonomy: resolve, validate, and install profiles
+# ---------------------------------------------------------------------------
 $ProfilesDir = Join-Path $DotbotBase "profiles"
-if ($Profile -and $Profile.Count -gt 0) {
-    foreach ($profileName in $Profile) {
-        $profileDir = Join-Path $ProfilesDir $profileName
-        
-        if (-not (Test-Path $profileDir)) {
-            Write-DotbotWarning "Profile not found: $profileName"
-            Write-Host "  Available profiles:" -ForegroundColor Yellow
-            Get-ChildItem -Path $ProfilesDir -Directory | ForEach-Object { Write-Host "    - $($_.Name)" }
-            continue
-        }
-        
-        Write-Status "Installing profile: $profileName"
-        
-        # Copy profile files (overlay on top of default)
-        Get-ChildItem -Path $profileDir -Recurse -File | ForEach-Object {
-            $relativePath = $_.FullName.Substring($profileDir.Length + 1)
-            $destPath = Join-Path $BotDir $relativePath
-            $destDir = Split-Path $destPath -Parent
-            
-            # Skip profile-init.ps1 (runs at init time, not copied to .bot/)
-            if ($relativePath -eq "profile-init.ps1") { return }
 
-            # Handle config.json merging for hooks/verify
-            if ($relativePath -eq "hooks\verify\config.json") {
-                $baseConfigPath = Join-Path $BotDir "hooks\verify\config.json"
-                if (Test-Path $baseConfigPath) {
-                    # Merge scripts arrays
-                    $baseConfig = Get-Content $baseConfigPath -Raw | ConvertFrom-Json
-                    $profileConfig = Get-Content $_.FullName -Raw | ConvertFrom-Json
-                    
-                    # Add profile scripts to base scripts (dedup by name)
-                    $existingNames = @{}
-                    foreach ($s in @($baseConfig.scripts)) { $existingNames[$s.name] = $true }
-                    $mergedScripts = @($baseConfig.scripts)
-                    foreach ($s in @($profileConfig.scripts)) {
-                        if (-not $existingNames.ContainsKey($s.name)) {
-                            $mergedScripts += $s
-                        }
+# Normalise -Profile input: accept comma-separated strings and/or arrays
+$requestedProfiles = @()
+if ($Profile -and $Profile.Count -gt 0) {
+    foreach ($entry in $Profile) {
+        foreach ($token in ($entry -split ',')) {
+            $trimmed = $token.Trim()
+            if ($trimmed) { $requestedProfiles += $trimmed }
+        }
+    }
+}
+
+# --- Helper: parse a simple profile.yaml (no external YAML module needed) ---
+function Read-ProfileYaml {
+    param([string]$ProfileDir)
+    $yamlPath = Join-Path $ProfileDir "profile.yaml"
+    $meta = @{ type = "stack"; name = (Split-Path $ProfileDir -Leaf); description = ""; extends = $null }
+    if (Test-Path $yamlPath) {
+        Get-Content $yamlPath | ForEach-Object {
+            if ($_ -match '^\s*(type|name|description|extends)\s*:\s*(.+)$') {
+                $meta[$Matches[1]] = $Matches[2].Trim()
+            }
+        }
+    }
+    return $meta
+}
+
+# --- Helper: deep-merge two PSCustomObjects / hashtables ---
+function Merge-DeepSettings {
+    param($Base, $Override)
+    if ($null -eq $Base) { return $Override }
+    if ($null -eq $Override) { return $Base }
+
+    # Convert PSCustomObject to ordered hashtable for mutation
+    function ConvertTo-OrderedHash ($obj) {
+        if ($obj -is [System.Collections.IDictionary]) { return $obj }
+        $h = [ordered]@{}
+        foreach ($p in $obj.PSObject.Properties) { $h[$p.Name] = $p.Value }
+        return $h
+    }
+
+    $result = ConvertTo-OrderedHash $Base
+    $over = ConvertTo-OrderedHash $Override
+
+    foreach ($key in $over.Keys) {
+        $overVal = $over[$key]
+        if ($result.Contains($key)) {
+            $baseVal = $result[$key]
+            if ($baseVal -is [System.Collections.IDictionary] -or ($baseVal -is [PSCustomObject] -and $baseVal.PSObject.Properties.Count -gt 0)) {
+                # Recurse into nested objects
+                $result[$key] = Merge-DeepSettings $baseVal $overVal
+            } elseif ($baseVal -is [System.Collections.IList] -and $overVal -is [System.Collections.IList]) {
+                # Arrays of objects (e.g. kickstart phases): replace entirely (ordered pipelines)
+                # Arrays of scalars (e.g. task_categories): concat + dedup
+                $hasObjects = ($overVal | Where-Object { $_ -is [PSCustomObject] } | Select-Object -First 1)
+                if ($hasObjects) {
+                    # Ordered pipeline — override replaces base entirely
+                    $result[$key] = $overVal
+                } else {
+                    # Scalar array — concat + dedup
+                    $merged = [System.Collections.ArrayList]::new(@($baseVal))
+                    foreach ($item in $overVal) {
+                        if ($merged -notcontains $item) { $merged.Add($item) | Out-Null }
                     }
-                    $baseConfig.scripts = $mergedScripts
-                    
-                    $baseConfig | ConvertTo-Json -Depth 10 | Set-Content $baseConfigPath
-                    Write-Host "    Merged: $relativePath" -ForegroundColor Gray
-                    return
+                    $result[$key] = @($merged)
+                }
+            } else {
+                # Scalars: last writer wins
+                $result[$key] = $overVal
+            }
+        } else {
+            $result[$key] = $overVal
+        }
+    }
+    return $result
+}
+
+# --- Resolve extends chains and validate taxonomy ---
+$resolvedOrder = @()            # final ordered list of profile names to install
+$workflowProfile = $null        # at most one
+$stackProfiles = @()            # zero or more
+$profileMeta = @{}              # name -> metadata hash
+
+if ($requestedProfiles.Count -gt 0) {
+    Write-Host ""
+    Write-Host "  PROFILE RESOLUTION" -ForegroundColor Blue
+    Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+    Write-Host ""
+
+    # First pass: read metadata for all requested profiles and resolve extends
+    $toProcess = [System.Collections.Generic.Queue[string]]::new()
+    foreach ($name in $requestedProfiles) { $toProcess.Enqueue($name) }
+    $seen = @{}
+
+    while ($toProcess.Count -gt 0) {
+        $name = $toProcess.Dequeue()
+        if ($seen.ContainsKey($name)) { continue }
+        $seen[$name] = $true
+
+        $profileDir = Join-Path $ProfilesDir $name
+        if (-not (Test-Path $profileDir)) {
+            Write-DotbotError "Profile not found: $name"
+            Write-Host "    Available profiles:" -ForegroundColor Yellow
+            Get-ChildItem -Path $ProfilesDir -Directory | Where-Object { $_.Name -ne "default" } | ForEach-Object { Write-Host "      - $($_.Name)" }
+            exit 1
+        }
+
+        $meta = Read-ProfileYaml $profileDir
+        $profileMeta[$name] = $meta
+
+        # If this profile extends another, queue the parent
+        if ($meta.extends -and -not $seen.ContainsKey($meta.extends)) {
+            $toProcess.Enqueue($meta.extends)
+            Write-Host "    Auto-including '$($meta.extends)' (required by '$name')" -ForegroundColor Gray
+        }
+    }
+
+    # Separate workflows from stacks
+    foreach ($name in $profileMeta.Keys) {
+        $meta = $profileMeta[$name]
+        if ($meta.type -eq "workflow") {
+            if ($workflowProfile) {
+                Write-DotbotError "Only one workflow profile is allowed (found '$workflowProfile' and '$name')"
+                exit 1
+            }
+            $workflowProfile = $name
+            Write-Host "    Workflow: $name" -ForegroundColor Cyan
+        } else {
+            $stackProfiles += $name
+            $label = $name
+            if ($meta.extends) { $label += " (extends: $($meta.extends))" }
+            Write-Host "    Stack:    $label" -ForegroundColor Cyan
+        }
+    }
+
+    # Build final order: workflow first, then stacks in dependency-resolved order
+    if ($workflowProfile) { $resolvedOrder += $workflowProfile }
+
+    # Topological sort for stacks (parents before children)
+    $stackSorted = @()
+    $visited = @{}
+    function Visit-Stack ($name) {
+        if ($visited.ContainsKey($name)) { return }
+        $visited[$name] = $true
+        $parent = $profileMeta[$name].extends
+        if ($parent -and $profileMeta.ContainsKey($parent)) {
+            Visit-Stack $parent
+        }
+        $script:stackSorted += $name
+    }
+    foreach ($name in $stackProfiles) { Visit-Stack $name }
+    $resolvedOrder += $stackSorted
+
+    Write-Host ""
+    Write-Status "Apply order: default -> $($resolvedOrder -join ' -> ')"
+}
+
+# --- Install each profile (overlay on top of default) ---
+$installedStacks = @()
+
+foreach ($profileName in $resolvedOrder) {
+    $profileDir = Join-Path $ProfilesDir $profileName
+    $meta = $profileMeta[$profileName]
+
+    Write-Status "Installing profile: $profileName ($($meta.type))"
+
+    # Copy profile files (overlay on top of default)
+    Get-ChildItem -Path $profileDir -Recurse -File | ForEach-Object {
+        $relativePath = $_.FullName.Substring($profileDir.Length + 1)
+        $destPath = Join-Path $BotDir $relativePath
+        $destDir = Split-Path $destPath -Parent
+
+        # Skip profile metadata files (not copied to .bot/)
+        if ($relativePath -eq "profile-init.ps1") { return }
+        if ($relativePath -eq "profile.yaml") { return }
+
+        # Handle config.json merging for hooks/verify
+        if ($relativePath -eq "hooks\verify\config.json") {
+            $baseConfigPath = Join-Path $BotDir "hooks\verify\config.json"
+            if (Test-Path $baseConfigPath) {
+                $baseConfig = Get-Content $baseConfigPath -Raw | ConvertFrom-Json
+                $profileConfig = Get-Content $_.FullName -Raw | ConvertFrom-Json
+
+                $existingNames = @{}
+                foreach ($s in @($baseConfig.scripts)) { $existingNames[$s.name] = $true }
+                $mergedScripts = @($baseConfig.scripts)
+                foreach ($s in @($profileConfig.scripts)) {
+                    if (-not $existingNames.ContainsKey($s.name)) {
+                        $mergedScripts += $s
+                    }
+                }
+                $baseConfig.scripts = $mergedScripts
+
+                $baseConfig | ConvertTo-Json -Depth 10 | Set-Content $baseConfigPath
+                Write-Host "    Merged: $relativePath" -ForegroundColor Gray
+                return
+            }
+        }
+
+        # Handle settings.default.json deep-merge
+        if ($relativePath -eq "defaults\settings.default.json") {
+            $baseSettingsPath = Join-Path $BotDir "defaults\settings.default.json"
+            if (Test-Path $baseSettingsPath) {
+                $baseSettings = Get-Content $baseSettingsPath -Raw | ConvertFrom-Json
+                $profileSettings = Get-Content $_.FullName -Raw | ConvertFrom-Json
+                $merged = Merge-DeepSettings $baseSettings $profileSettings
+                $merged | ConvertTo-Json -Depth 10 | Set-Content $baseSettingsPath
+                Write-Host "    Merged: $relativePath" -ForegroundColor Gray
+                return
+            }
+        }
+
+        # Create directory if needed
+        if (-not (Test-Path $destDir)) {
+            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+        }
+
+        # Copy file
+        Copy-Item -Path $_.FullName -Destination $destPath -Force
+        Write-Host "    Copied: $relativePath" -ForegroundColor Gray
+    }
+
+    # Clean stale default workflows when a workflow profile is installed
+    if ($meta.type -eq "workflow") {
+        $workflowDir = Join-Path $BotDir "prompts\workflows"
+        if (Test-Path $workflowDir) {
+            # Collect filenames the overlay just provided
+            $overlayWorkflowDir = Join-Path $profileDir "prompts\workflows"
+            $overlayFiles = @{}
+            if (Test-Path $overlayWorkflowDir) {
+                Get-ChildItem -Path $overlayWorkflowDir -File | ForEach-Object {
+                    $overlayFiles[$_.Name] = $true
                 }
             }
-            
-            # Create directory if needed
-            if (-not (Test-Path $destDir)) {
-                New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+            # Remove 00-89 range .md files NOT provided by the overlay
+            Get-ChildItem -Path $workflowDir -File -Filter "*.md" | Where-Object {
+                $_.Name -match '^[0-8]\d' -and -not $overlayFiles.ContainsKey($_.Name)
+            } | ForEach-Object {
+                Remove-Item -Path $_.FullName -Force
+                Write-Host "    Removed stale default workflow: $($_.Name)" -ForegroundColor DarkYellow
             }
-            
-            # Copy file
-            Copy-Item -Path $_.FullName -Destination $destPath -Force
-            Write-Host "    Copied: $relativePath" -ForegroundColor Gray
         }
-        
-        Write-Success "Installed profile: $profileName"
+    }
 
-        # Run profile init script if present
-        $profileInitScript = Join-Path $profileDir "profile-init.ps1"
-        if (Test-Path $profileInitScript) {
-            Write-Status "Running $profileName init script"
-            & $profileInitScript
+    if ($meta.type -eq "stack") { $installedStacks += $profileName }
+    Write-Success "Installed profile: $profileName ($($meta.type))"
+
+    # Run profile init script if present
+    $profileInitScript = Join-Path $profileDir "profile-init.ps1"
+    if (Test-Path $profileInitScript) {
+        Write-Status "Running $profileName init script"
+        & $profileInitScript
+    }
+}
+
+# --- Record installed profiles in settings ---
+if ($resolvedOrder.Count -gt 0) {
+    $settingsPath = Join-Path $BotDir "defaults\settings.default.json"
+    if (Test-Path $settingsPath) {
+        $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+        if ($workflowProfile) {
+            $settings | Add-Member -NotePropertyName "profile" -NotePropertyValue $workflowProfile -Force
         }
+        if ($installedStacks.Count -gt 0) {
+            $settings | Add-Member -NotePropertyName "stacks" -NotePropertyValue $installedStacks -Force
+        }
+        $settings | ConvertTo-Json -Depth 10 | Set-Content $settingsPath
     }
 }
 
@@ -317,9 +531,9 @@ if (Test-Path $mcpJsonPath) {
 } else {
     Write-Status "Creating .mcp.json (dotbot + Context7 + Playwright + Serena)"
 
-    # Playwright MCP output goes to OS temp dir to avoid polluting the project
-    $projectName = Split-Path $ProjectDir -Leaf
-    $pwOutputDir = Join-Path ([System.IO.Path]::GetTempPath()) "dotbot" "playwright-mcp" $projectName
+    # Playwright MCP output goes to .bot/.control/ (gitignored) — uses a relative
+    # path so .mcp.json doesn't contain absolute user paths that trip the privacy scan
+    $pwOutputDir = ".bot/.control/playwright-output"
 
     # On Windows, npx must be invoked via 'cmd /c' for stdio MCP servers
     if ($IsWindows) {
@@ -508,9 +722,9 @@ if ((Test-Path $preCommitPath) -and -not $existingHookIsOurs) {
 # Auto-generated by dotbot init — do not edit manually.
 $gitleaksSection
 # --- dotbot privacy scan ---
-"$pwshCmd" -NoProfile -ExecutionPolicy Bypass -Command "
-  `$r = & '.bot/hooks/verify/00-privacy-scan.ps1' -StagedOnly | ConvertFrom-Json;
-  if (-not `$r.success) { exit 1 }"
+"$pwshCmd" -NoProfile -ExecutionPolicy Bypass -Command '
+  `$r = & ".bot/hooks/verify/00-privacy-scan.ps1" -StagedOnly | ConvertFrom-Json;
+  if (-not `$r.success) { exit 1 }'
 "@
     Set-Content -Path $preCommitPath -Value $hookContent -Encoding UTF8 -NoNewline
     # Make executable on non-Windows platforms
@@ -533,6 +747,10 @@ if ($LASTEXITCODE -ne 0) {
     git -C $ProjectDir commit --quiet -m "chore: initialize dotbot" 2>$null
     if ($LASTEXITCODE -eq 0) {
         Write-Success "Initial commit created"
+    } else {
+        # Unstage everything so leftover staged files don't contaminate future commits
+        git -C $ProjectDir reset 2>$null
+        Write-DotbotWarning "Initial commit failed -- files unstaged"
     }
 }
 
@@ -557,15 +775,118 @@ Write-Host "    .bot/systems/runtime/" -NoNewline -ForegroundColor Yellow
 Write-Host "Autonomous loop for Claude CLI" -ForegroundColor White
 Write-Host "    .bot/prompts/        " -NoNewline -ForegroundColor Yellow
 Write-Host "Agents, skills, workflows" -ForegroundColor White
-if ($Profile -and $Profile.Count -gt 0) {
+if ($resolvedOrder.Count -gt 0) {
     Write-Host ""
     Write-Host "  PROFILES INSTALLED" -ForegroundColor Blue
     Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
     Write-Host ""
-    foreach ($p in $Profile) {
-        Write-Host "    $p" -ForegroundColor Cyan
+    if ($workflowProfile) {
+        Write-Host "    workflow: $workflowProfile" -ForegroundColor Cyan
+    }
+    if ($installedStacks.Count -gt 0) {
+        Write-Host "    stacks:   $($installedStacks -join ', ')" -ForegroundColor Cyan
     }
 }
+
+# ---------------------------------------------------------------------------
+# Show profile-specific dependency checks (from kickstart.preflight)
+# ---------------------------------------------------------------------------
+$settingsDefaultPath = Join-Path $BotDir "defaults\settings.default.json"
+if (Test-Path $settingsDefaultPath) {
+    try {
+        $finalSettings = Get-Content $settingsDefaultPath -Raw | ConvertFrom-Json
+        $preflightChecks = @()
+        if ($finalSettings.kickstart -and $finalSettings.kickstart.preflight) {
+            $preflightChecks = @($finalSettings.kickstart.preflight)
+        }
+    } catch {
+        $preflightChecks = @()
+    }
+
+    if ($preflightChecks.Count -gt 0) {
+        Write-Host ""
+        Write-Host "  PROFILE DEPENDENCIES" -ForegroundColor Blue
+        Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+        Write-Host ""
+
+        $mcpListCache = $null
+        $envLocalPath = Join-Path $ProjectDir ".env.local"
+        $depWarningCount = 0
+
+        foreach ($check in $preflightChecks) {
+            $label = if ($check.message) { $check.message } else { $check.name }
+            $hint  = $check.hint
+            $passed = $false
+
+            switch ($check.type) {
+                'env_var' {
+                    $varName = if ($check.var) { $check.var } else { $check.name }
+                    $envValue = $null
+                    if (Test-Path $envLocalPath) {
+                        $envLines = Get-Content $envLocalPath -ErrorAction SilentlyContinue
+                        foreach ($line in $envLines) {
+                            if ($line -match "^\s*$([regex]::Escape($varName))\s*=\s*(.+)$") {
+                                $envValue = $matches[1].Trim()
+                            }
+                        }
+                    }
+                    $passed = [bool]$envValue
+                    if (-not $hint -and -not $passed) {
+                        $hint = "Set $varName in .env.local"
+                    }
+                }
+                'mcp_server' {
+                    $mcpFound = $false
+                    if (Test-Path $mcpJsonPath) {
+                        try {
+                            $mcpData = Get-Content $mcpJsonPath -Raw | ConvertFrom-Json
+                            if ($mcpData.mcpServers -and $mcpData.mcpServers.PSObject.Properties.Name -contains $check.name) {
+                                $mcpFound = $true
+                            }
+                        } catch {}
+                    }
+                    if (-not $mcpFound) {
+                        if ($null -eq $mcpListCache) {
+                            try { $mcpListCache = & claude mcp list 2>&1 | Out-String }
+                            catch { $mcpListCache = "" }
+                        }
+                        if ($mcpListCache -match "(?m)^$([regex]::Escape($check.name)):") {
+                            $mcpFound = $true
+                        }
+                    }
+                    $passed = $mcpFound
+                    if (-not $hint -and -not $passed) {
+                        $hint = "Register '$($check.name)' server in .mcp.json or via 'claude mcp add'"
+                    }
+                }
+                'cli_tool' {
+                    $passed = $null -ne (Get-Command $check.name -ErrorAction SilentlyContinue)
+                    if (-not $hint -and -not $passed) {
+                        $hint = "Install '$($check.name)' and ensure it is on PATH"
+                    }
+                }
+            }
+
+            if ($passed) {
+                Write-Success $label
+            } else {
+                Write-DotbotWarning $label
+                if ($hint) {
+                    Write-Host "    $hint" -ForegroundColor DarkGray
+                }
+                $depWarningCount++
+            }
+        }
+
+        if ($depWarningCount -gt 0) {
+            Write-Host ""
+            Write-Host "  .env.local is a project-level file (in the same folder as .bot/) for" -ForegroundColor DarkGray
+            Write-Host "  secrets and credentials. It is gitignored. Create it and add the missing" -ForegroundColor DarkGray
+            Write-Host "  variables as KEY=value pairs, one per line." -ForegroundColor DarkGray
+        }
+    }
+}
+
 Write-Host ""
 Write-Host "  GET STARTED" -ForegroundColor Blue
 Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray

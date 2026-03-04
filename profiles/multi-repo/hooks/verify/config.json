@@ -1,0 +1,11 @@
+{
+  "scripts": [
+    {
+      "name": "03-research-completeness.ps1",
+      "description": "Verify all required research artifacts exist before proceeding to implementation",
+      "required": false,
+      "core": false,
+      "timeout_seconds": 30
+    }
+  ]
+}

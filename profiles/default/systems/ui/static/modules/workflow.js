@@ -254,6 +254,74 @@ function updateRelationshipTree(chain, selectedType, selectedFile) {
 }
 
 /**
+ * Render kickstart phase progress at top of relationship panel
+ * @param {Object} data - Response from /api/kickstart/status
+ */
+function renderKickstartPhases(data) {
+    const container = document.getElementById('relationship-tree');
+    if (!container || !data || !data.phases || data.phases.length === 0) return;
+
+    // Remove existing kickstart section if present
+    const existing = container.querySelector('.kickstart-phases');
+    if (existing) existing.remove();
+
+    const completedCount = data.phases.filter(p => p.status === 'completed').length;
+    const totalCount = data.phases.length;
+
+    const statusIcons = {
+        completed: '<span class="phase-icon phase-completed">&#10003;</span>',
+        running:   '<span class="phase-icon phase-running">&#9679;</span>',
+        failed:    '<span class="phase-icon phase-failed">&#10007;</span>',
+        skipped:   '<span class="phase-icon phase-skipped">&#8211;</span>',
+        pending:   '<span class="phase-icon phase-pending">&#9675;</span>',
+        incomplete:'<span class="phase-icon phase-failed">&#9675;</span>'
+    };
+
+    let html = `
+        <div class="kickstart-phases">
+            <div class="chain-layer-header" data-layer="kickstart-phases">
+                <span class="chain-layer-title">Kickstart Phases</span>
+                <span class="chain-layer-count">${completedCount}/${totalCount}</span>
+            </div>
+            <div class="chain-layer-items">
+    `;
+
+    data.phases.forEach(phase => {
+        const icon = statusIcons[phase.status] || statusIcons.pending;
+        html += `
+            <div class="chain-layer-item kickstart-phase-item kickstart-phase-${phase.status}">
+                ${icon}
+                <span class="item-name">${escapeHtml(phase.name)}</span>
+            </div>
+        `;
+    });
+
+    if (data.status === 'incomplete' && data.resume_from) {
+        html += `
+            <div class="kickstart-resume-row">
+                <button class="kickstart-resume-btn" onclick="resumeKickstart()">RESUME</button>
+            </div>
+        `;
+    }
+
+    html += `
+            </div>
+        </div>
+    `;
+
+    // Insert at top of relationship tree
+    container.insertAdjacentHTML('afterbegin', html);
+
+    // Add collapse/expand handler
+    const header = container.querySelector('.kickstart-phases .chain-layer-header');
+    if (header) {
+        header.addEventListener('click', () => {
+            header.closest('.kickstart-phases').classList.toggle('collapsed');
+        });
+    }
+}
+
+/**
  * Update just the markdown content without rebuilding the relationship tree
  * @param {string} type - File type
  * @param {string} file - File name

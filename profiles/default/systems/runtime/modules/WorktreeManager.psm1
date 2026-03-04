@@ -14,8 +14,13 @@ Branch naming:
   task/{short-id}-{slug}
 
 Shared infrastructure via directory junctions:
-  .bot/.control/        -> central control (process registry, settings)
-  .bot/workspace/tasks/ -> central task queue (todo, done, etc.)
+  .bot/.control/          -> central control (process registry, settings)
+  .bot/workspace/tasks/   -> central task queue (todo, done, etc.)
+  .bot/workspace/product/ -> shared research outputs and briefing
+  .bot/hooks/             -> verification scripts, commit-bot-state, dev lifecycle
+  .bot/systems/           -> MCP server, runtime, UI
+  .bot/prompts/           -> workflow prompts, research methodologies, standards
+  .bot/defaults/          -> settings defaults
 #>
 
 # --- Internal State ---
@@ -82,8 +87,17 @@ function Write-WorktreeMap {
         New-Item -Path $dir -ItemType Directory -Force | Out-Null
     }
     $tempFile = "$($script:WorktreeMapPath).tmp"
-    $Map | ConvertTo-Json -Depth 10 | Set-Content -Path $tempFile -Encoding utf8NoBOM -NoNewline
-    Move-Item -Path $tempFile -Destination $script:WorktreeMapPath -Force
+    $maxRetries = 3
+    for ($r = 0; $r -lt $maxRetries; $r++) {
+        try {
+            $Map | ConvertTo-Json -Depth 10 | Set-Content -Path $tempFile -Encoding utf8NoBOM -NoNewline
+            Move-Item -Path $tempFile -Destination $script:WorktreeMapPath -Force -ErrorAction Stop
+            return
+        } catch {
+            if (Test-Path $tempFile) { Remove-Item $tempFile -Force -ErrorAction SilentlyContinue }
+            if ($r -lt ($maxRetries - 1)) { Start-Sleep -Milliseconds (50 * ($r + 1)) }
+        }
+    }
 }
 
 function Get-TaskSlug {
@@ -109,7 +123,12 @@ function Remove-Junctions {
 
     $junctionPaths = @(
         (Join-Path $WorktreePath ".bot\.control"),
-        (Join-Path $WorktreePath ".bot\workspace\tasks")
+        (Join-Path $WorktreePath ".bot\workspace\tasks"),
+        (Join-Path $WorktreePath ".bot\workspace\product"),
+        (Join-Path $WorktreePath ".bot\hooks"),
+        (Join-Path $WorktreePath ".bot\systems"),
+        (Join-Path $WorktreePath ".bot\prompts"),
+        (Join-Path $WorktreePath ".bot\defaults")
     )
     $failures = @()
     foreach ($jp in $junctionPaths) {
@@ -248,6 +267,48 @@ function New-TaskWorktree {
         }
         New-Item -ItemType Junction -Path $worktreeTasksDir -Target $mainTasksDir | Out-Null
 
+        # 3. .bot/hooks/ — verify scripts, commit-bot-state, dev lifecycle
+        $worktreeHooksDir = Join-Path $worktreePath ".bot\hooks"
+        $mainHooksDir = Join-Path $BotRoot "hooks"
+        if ((Test-Path $mainHooksDir) -and -not (Test-Path $worktreeHooksDir)) {
+            New-Item -ItemType Junction -Path $worktreeHooksDir -Target $mainHooksDir | Out-Null
+        }
+
+        # 4. .bot/systems/ — MCP server, runtime, UI
+        $worktreeSystemsDir = Join-Path $worktreePath ".bot\systems"
+        $mainSystemsDir = Join-Path $BotRoot "systems"
+        if ((Test-Path $mainSystemsDir) -and -not (Test-Path $worktreeSystemsDir)) {
+            New-Item -ItemType Junction -Path $worktreeSystemsDir -Target $mainSystemsDir | Out-Null
+        }
+
+        # 5. .bot/prompts/ — workflow prompts, research methodologies, standards
+        $worktreePromptsDir = Join-Path $worktreePath ".bot\prompts"
+        $mainPromptsDir = Join-Path $BotRoot "prompts"
+        if ((Test-Path $mainPromptsDir) -and -not (Test-Path $worktreePromptsDir)) {
+            New-Item -ItemType Junction -Path $worktreePromptsDir -Target $mainPromptsDir | Out-Null
+        }
+
+        # 6. .bot/defaults/ — settings defaults
+        $worktreeDefaultsDir = Join-Path $worktreePath ".bot\defaults"
+        $mainDefaultsDir = Join-Path $BotRoot "defaults"
+        if ((Test-Path $mainDefaultsDir) -and -not (Test-Path $worktreeDefaultsDir)) {
+            New-Item -ItemType Junction -Path $worktreeDefaultsDir -Target $mainDefaultsDir | Out-Null
+        }
+
+        # 7. .bot/workspace/product/ — shared research outputs and briefing
+        $worktreeProductDir = Join-Path $worktreePath ".bot\workspace\product"
+        $mainProductDir = Join-Path $BotRoot "workspace\product"
+        if (Test-Path $mainProductDir) {
+            if (Test-Path $worktreeProductDir) {
+                Remove-Item -Path $worktreeProductDir -Recurse -Force
+            }
+            $productParent = Split-Path $worktreeProductDir -Parent
+            if (-not (Test-Path $productParent)) {
+                New-Item -Path $productParent -ItemType Directory -Force | Out-Null
+            }
+            New-Item -ItemType Junction -Path $worktreeProductDir -Target $mainProductDir | Out-Null
+        }
+
         # Copy non-noisy gitignored build artifacts
         Copy-BuildArtifacts -ProjectRoot $ProjectRoot -WorktreePath $worktreePath
 
@@ -321,8 +382,9 @@ function Complete-TaskWorktree {
         # Remove junctions BEFORE commit/rebase so git sees real tracked files
         $junctionsClean = Remove-Junctions -WorktreePath $worktreePath -ErrorOnFailure $false
 
-        # Restore tracked files that were replaced by the tasks junction
+        # Restore tracked files that were replaced by junctions
         git -C $worktreePath checkout -- .bot/workspace/tasks 2>$null
+        git -C $worktreePath checkout -- .bot/workspace/product 2>$null
 
         # Auto-commit any uncommitted work left by Claude CLI
         $worktreeStatus = git -C $worktreePath status --porcelain 2>$null

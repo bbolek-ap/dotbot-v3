@@ -134,7 +134,7 @@ function showDimmedEditorButton(btn, iconEl, labelEl) {
     btn.classList.add('dimmed');
     btn.title = 'Configure editor';
     iconEl.innerHTML = GENERIC_EDITOR_ICON;
-    labelEl.textContent = '';
+    labelEl.textContent = 'Open in Editor';
     btn.onclick = () => {
         document.querySelector('[data-tab="settings"]')?.click();
         setTimeout(() => {
