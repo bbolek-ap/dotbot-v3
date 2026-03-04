@@ -208,12 +208,13 @@ public class TeamsDeliveryProvider : IQuestionDeliveryProvider
                 serviceUrl,
                 "https://api.botframework.com",
                 parameters,
-                async (turnContext, innerCt) =>
+                (turnContext, innerCt) =>
                 {
                     var convoRef = turnContext.Activity.GetConversationReference();
                     _convoStore.AddOrUpdate(userId, convoRef);
                     _logger.LogInformation(
                         "Created and stored conversation reference for user {UserId}", userId);
+                    return Task.CompletedTask;
                 },
                 ct);
         }
