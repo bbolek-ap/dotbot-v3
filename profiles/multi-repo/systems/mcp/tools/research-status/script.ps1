@@ -75,10 +75,20 @@ function Invoke-ResearchStatus {
     # ---------------------------------------------------------------------------
     # Check deep dive reports
     # ---------------------------------------------------------------------------
-    $reposDir = Join-Path $briefingDir "repos"
+    # Check deep dive reports — look in product dir with naming convention
     $deepDives = @()
     $indexExists = $false
+    $summaryFiles = Get-ChildItem -Path $productDir -Filter "research-repo-*-summary.md" -File -ErrorAction SilentlyContinue
+    foreach ($f in $summaryFiles) {
+        $repoName = $f.BaseName -replace '^research-repo-', '' -replace '-summary$', ''
+        $deepDives += @{
+            repo = $repoName
+            path = $f.FullName
+        }
+    }
 
+    # Also check legacy location (briefing/repos/) for backward compatibility
+    $reposDir = Join-Path $briefingDir "repos"
     if (Test-Path $reposDir) {
         $files = Get-ChildItem -Path $reposDir -Filter "*.md" -File -ErrorAction SilentlyContinue
         foreach ($f in $files) {

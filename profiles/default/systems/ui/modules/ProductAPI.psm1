@@ -374,6 +374,15 @@ function Resolve-PhaseStatusFromOutputs {
     $productDir = Join-Path $BotRoot "workspace\product"
     $phaseType = if ($Phase.type) { $Phase.type } else { "llm" }
 
+    # If the phase has a condition, check it first — unmet means it can't have run
+    if ($Phase.condition) {
+        $cond = $Phase.condition
+        if ($cond -match '^file_exists:(.+)$') {
+            $condPath = Join-Path $BotRoot $Matches[1]
+            if (-not (Test-Path $condPath)) { return "pending" }
+        }
+    }
+
     if ($phaseType -eq "interview") {
         $interviewPath = Join-Path $productDir "interview-summary.md"
         if (Test-Path $interviewPath) { return "completed" }
@@ -515,21 +524,37 @@ function Get-KickstartStatus {
         }
     }
 
-    # Process found — use its phases array if available
+    # Process found — merge settings (canonical) with process-file status
+    $procPhaseMap = @{}
     if ($latestProc.phases -and $latestProc.phases.Count -gt 0) {
-        $phases = @($latestProc.phases | ForEach-Object {
-            @{ id = $_.id; name = $_.name; type = $_.type; status = $_.status }
-        })
-    } else {
-        # Legacy process without phases — infer from outputs
-        $phases = @($kickstartPhases | ForEach-Object {
+        foreach ($pp in $latestProc.phases) {
+            $procPhaseMap[$pp.id] = $pp
+        }
+    }
+
+    $phases = @($kickstartPhases | ForEach-Object {
+        $phaseId   = $_.id
+        $phaseName = $_.name
+        $phaseType = if ($_.type) { $_.type } else { "llm" }
+        $procEntry = $procPhaseMap[$phaseId]
+
+        if ($procEntry -and $procEntry.status -eq 'skipped') {
+            # Skipped = completed in a prior run — show as completed
+            @{ id = $phaseId; name = $phaseName; type = $phaseType; status = 'completed' }
+        } elseif ($procEntry -and $procEntry.status -and $procEntry.status -ne 'pending') {
+            # Process file has real status (running, completed, failed, etc.) — use it
+            @{ id = $phaseId; name = $phaseName; type = $phaseType; status = $procEntry.status }
+        } else {
+            # Not in process file or still pending — infer from filesystem
             $inferredStatus = Resolve-PhaseStatusFromOutputs -Phase $_ -BotRoot $botRoot
-            @{
-                id = $_.id; name = $_.name
-                type = if ($_.type) { $_.type } else { "llm" }
-                status = $inferredStatus
-            }
-        })
+            @{ id = $phaseId; name = $phaseName; type = $phaseType; status = $inferredStatus }
+        }
+    })
+
+    # Preserve synthetic interview phase (in process file but not in settings)
+    if ($procPhaseMap.ContainsKey('interview') -and -not ($kickstartPhases | Where-Object { $_.id -eq 'interview' })) {
+        $iv = $procPhaseMap['interview']
+        $phases = @(@{ id = 'interview'; name = $iv.name; type = 'interview'; status = $iv.status }) + $phases
     }
 
     # Sequential consistency: if a later phase completed, earlier ones must have too

@@ -21,10 +21,8 @@ Create exactly 3 research tasks using `task_create_bulk`. These tasks cover the 
 ### Step 1: Read Initiative Context
 
 ```
-read_files({ files: [
-  { path: ".bot/workspace/product/briefing/jira-context.md" },
-  { path: ".bot/workspace/product/mission.md" }
-]})
+Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
+Read({ file_path: ".bot/workspace/product/mission.md" })
 ```
 
 Extract the initiative name and Jira key for task naming.

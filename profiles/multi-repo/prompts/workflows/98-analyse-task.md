@@ -98,7 +98,7 @@ mcp__dotbot__task_mark_analysing({ task_id: "{{TASK_ID}}" })
 Read the initiative document for all context needed by the research methodology:
 
 ```
-read_files({ files: [{ path: ".bot/workspace/product/briefing/jira-context.md" }] })
+Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
 ```
 
 Extract from `jira-context.md`:
@@ -112,12 +112,17 @@ Extract from `jira-context.md`:
 
 These values will be substituted into the research methodology prompt.
 
+> **Path reference** — Initiative context is in `briefing/` but research outputs are one level up:
+> - Initiative context: `.bot/workspace/product/briefing/jira-context.md`
+> - Research outputs: `.bot/workspace/product/research-documents.md`, `research-internet.md`, `research-repos.md`
+> - Deep dive outputs: `.bot/workspace/product/research-repo-{RepoName}-summary.md`
+
 ### Research Phase 3: Load Research Methodology
 
 Load the research prompt specified in the task's `research_prompt` field:
 
 ```
-read_files({ files: [{ path: ".bot/prompts/research/{{TASK.research_prompt}}" }] })
+Read({ file_path: ".bot/prompts/research/{{TASK.research_prompt}}" })
 ```
 
 The research prompt is a **methodology document** — it defines:
@@ -130,9 +135,9 @@ The research prompt is a **methodology document** — it defines:
 
 If this task has dependencies, the dependent research outputs should already exist. Load them for context:
 
-- `research-documents.md` — from Atlassian research
-- `research-internet.md` — from public research
-- `research-repos.md` — from repo scan
+- `.bot/workspace/product/research-documents.md` — from Atlassian research
+- `.bot/workspace/product/research-internet.md` — from public research
+- `.bot/workspace/product/research-repos.md` — from repo scan
 
 Only load what exists and is relevant to this task's methodology.
 
@@ -165,7 +170,7 @@ mcp__dotbot__task_mark_analysed({
       ado_org_url: "<from jira-context.md or .env.local>"
     },
     prior_research: [
-      "<list of prior research files that exist and are relevant>"
+      "<full relative paths, e.g. .bot/workspace/product/research-documents.md>"
     ],
     working_dir: "<from task, or null>",
     external_repo: "<from task, or null>",
@@ -189,7 +194,7 @@ When the task is NOT a research task, use the standard 10-phase analysis protoco
 
 Before extracting product context, also read:
 ```
-read_files({ files: [{ path: ".bot/workspace/product/briefing/jira-context.md" }] })
+Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
 ```
 
 Include the initiative's Jira key, business objective, and reference implementation in the `product_context` section of the analysis output.

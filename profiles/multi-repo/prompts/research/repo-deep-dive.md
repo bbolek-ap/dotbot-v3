@@ -1,6 +1,6 @@
 # Research Methodology: Repository Deep Dive
 
-## Objective: Generate `research-repo-{RepoName}-summary.md`
+## Objective: Generate `briefing/repos/{RepoName}.md`
 
 You are a Research AI Agent with access to a locally cloned repository and the tools necessary to explore its full source tree (file listing, pattern search, symbol navigation, file reading).
 
@@ -16,7 +16,7 @@ Dotbot task management tools were also loaded in Phase 0. Do not call ToolSearch
 
 Your task is to conduct a thorough code-level analysis of a single repository and produce a structured deep-dive report saved as:
 
-`.bot/workspace/product/research-repo-{RepoName}-summary.md`
+`.bot/workspace/product/briefing/repos/{RepoName}.md`
 
 where `{RepoName}` matches the repository name exactly as it appears in Azure DevOps.
 
@@ -413,7 +413,7 @@ Prefer symbol navigation over reading entire files — get method signatures and
 
 Output must be a single Markdown file per repository:
 
-`.bot/workspace/product/research-repo-{RepoName}-summary.md`
+`.bot/workspace/product/briefing/repos/{RepoName}.md`
 
 Well-structured, evidence-based, and suitable for an implementation engineer to use as a detailed work breakdown reference.
 

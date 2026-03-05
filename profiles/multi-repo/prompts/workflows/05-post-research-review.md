@@ -21,19 +21,17 @@ After all research tasks have completed, this workflow consolidates findings int
 Read the following files (skip any that don't exist):
 
 ```
-read_files({ files: [
-  { path: ".bot/workspace/product/briefing/jira-context.md" },
-  { path: ".bot/workspace/product/mission.md" },
-  { path: ".bot/workspace/product/roadmap-overview.md" },
-  { path: ".bot/workspace/product/research-internet.md" },
-  { path: ".bot/workspace/product/research-documents.md" },
-  { path: ".bot/workspace/product/research-repos.md" }
-]})
+Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
+Read({ file_path: ".bot/workspace/product/mission.md" })
+Read({ file_path: ".bot/workspace/product/roadmap-overview.md" })
+Read({ file_path: ".bot/workspace/product/research-internet.md" })
+Read({ file_path: ".bot/workspace/product/research-documents.md" })
+Read({ file_path: ".bot/workspace/product/research-repos.md" })
 ```
 
 Also check for deep-dive reports:
 ```
-list_dir({ relative_path: ".bot/workspace/product/briefing/repos" })
+Glob({ pattern: "*.md", path: ".bot/workspace/product/briefing/repos" })
 ```
 
 Read any `*.md` files found in that directory.

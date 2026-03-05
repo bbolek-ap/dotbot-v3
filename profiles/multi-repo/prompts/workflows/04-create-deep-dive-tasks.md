@@ -18,10 +18,8 @@ This workflow runs after the foundational research (Phase 1) completes. It reads
 ### Step 1: Read Source Documents
 
 ```
-read_files({ files: [
-  { path: ".bot/workspace/product/research-repos.md" },
-  { path: ".bot/workspace/product/briefing/jira-context.md" }
-]})
+Read({ file_path: ".bot/workspace/product/research-repos.md" })
+Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
 ```
 
 ### Step 2: Parse Repo Tables
@@ -57,7 +55,7 @@ mcp__dotbot__task_create_bulk({
     // For each MEDIUM+ repo:
     {
       "name": "Deep dive: {RepoName}",
-      "description": "Conduct a thorough code-level analysis of the {RepoName} repository. Clone the repo, analyse source code, database scripts, configuration, and tests. Produce a structured deep-dive report.\n\nTier: {TIER}\nImpact: {IMPACT}\nProject: {PROJECT}\nPurpose: {PURPOSE}\n\nOutput: .bot/workspace/product/research-repo-{RepoName}-summary.md",
+      "description": "Conduct a thorough code-level analysis of the {RepoName} repository. Clone the repo, analyse source code, database scripts, configuration, and tests. Produce a structured deep-dive report.\n\nTier: {TIER}\nImpact: {IMPACT}\nProject: {PROJECT}\nPurpose: {PURPOSE}\n\nOutput: .bot/workspace/product/briefing/repos/{RepoName}.md",
       "category": "research",
       "effort": "{EFFORT_BASED_ON_IMPACT}",
       "priority": "{PRIORITY_BASED_ON_ORDER}",
@@ -72,7 +70,7 @@ mcp__dotbot__task_create_bulk({
       "working_dir": "repos/{RepoName}",
       "acceptance_criteria": [
         "Repo cloned to repos/{RepoName}/ on initiative branch",
-        "Deep dive report written to .bot/workspace/product/research-repo-{RepoName}-summary.md",
+        "Deep dive report written to .bot/workspace/product/briefing/repos/{RepoName}.md",
         "Reference implementation file inventory complete",
         "Files requiring changes identified with change types",
         "New files needed listed with proposed paths",
@@ -91,7 +89,7 @@ mcp__dotbot__task_create_bulk({
         "Analyse database impact",
         "Review API contracts and test coverage",
         "Identify dependencies on other repos",
-        "Write structured deep-dive report to .bot/workspace/product/research-repo-{RepoName}-summary.md",
+        "Write structured deep-dive report to .bot/workspace/product/briefing/repos/{RepoName}.md",
         "Create per-repo workspace: repos/{RepoName}/.bot/workspace/{product,tasks}/"
       ],
       "applicable_standards": [".bot/prompts/standards/global/research-output.md"],

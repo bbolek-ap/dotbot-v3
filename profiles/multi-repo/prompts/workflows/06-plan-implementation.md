@@ -19,16 +19,14 @@ Creates detailed, code-level implementation plans for each affected repository. 
 ### Step 1: Read Context
 
 ```
-read_files({ files: [
-  { path: ".bot/workspace/product/briefing/jira-context.md" },
-  { path: ".bot/workspace/product/briefing/04_IMPLEMENTATION_RESEARCH.md" }
-]})
+Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
+Read({ file_path: ".bot/workspace/product/briefing/04_IMPLEMENTATION_RESEARCH.md" })
 ```
 
 ### Step 2: Load Plan Template
 
 ```
-read_files({ files: [{ path: ".bot/prompts/implementation/plan.md" }] })
+Read({ file_path: ".bot/prompts/implementation/plan.md" })
 ```
 
 ### Step 3: Identify Target Repos
@@ -41,9 +39,7 @@ For each target repo, read its deep dive report and produce a plan file.
 
 **Read the deep dive:**
 ```
-read_files({ files: [
-  { path: ".bot/workspace/product/briefing/repos/{RepoName}.md" }
-]})
+Read({ file_path: ".bot/workspace/product/briefing/repos/{RepoName}.md" })
 ```
 
 **Write the plan to the per-repo workspace:**

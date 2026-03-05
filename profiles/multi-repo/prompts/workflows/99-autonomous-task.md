@@ -32,7 +32,7 @@ ToolSearch({ query: "select:mcp__dotbot__plan_get" })
 | `repo-deep-dive.md` | All sourcebot tools above + `select:mcp__dotbot__repo_clone`, `select:mcp__dotbot__repo_list` |
 | `atlassian.md` | `select:mcp__dotbot__atlassian_download`, `select:mcp__atlassian__getJiraIssue`, `select:mcp__atlassian__searchJiraIssuesUsingJql`, `select:mcp__atlassian__searchConfluenceUsingCql`, `select:mcp__atlassian__getConfluencePage` |
 | `public.md` | **None** — internet research uses only built-in WebSearch and WebFetch |
-| _(standard task)_ | `select:mcp__context7__resolve-library-id`, `select:mcp__context7__query-docs` |
+| _(standard task)_ | `select:mcp__context7__resolve-library-id`, `select:mcp__context7__get-library-docs` |
 
 Issue all ToolSearch calls from Steps 1 and 2 in a **single parallel batch**. Do not call ToolSearch again after Phase 0.
 
@@ -115,17 +115,22 @@ When the analysis mode is `research`, you are executing a research task — gath
    - `external_repo` — repo to clone (if deep dive)
    - `output_path` — where to write the research output
 
+> **Path reference** — do not confuse `briefing/` with `product/`:
+> - Initiative context: `.bot/workspace/product/briefing/jira-context.md`
+> - Research outputs: `.bot/workspace/product/research-documents.md`, `research-internet.md`, `research-repos.md`
+> - Deep dive outputs: `.bot/workspace/product/research-repo-{RepoName}-summary.md`
+
 ### Research Exec Phase 2: Prepare Environment
 
 1. **Read the research methodology:**
    ```
-   read_files({ files: [{ path: ".bot/prompts/research/{analysis.research_prompt}" }] })
+   Read({ file_path: ".bot/prompts/research/{analysis.research_prompt}" })
    ```
 
 2. **Initiative context** is already loaded from the analysis package above (Phase 1, step 3).
    Only re-read `jira-context.md` if the analysis context does not include `initiative` details:
    ```
-   read_files({ files: [{ path: ".bot/workspace/product/briefing/jira-context.md" }] })
+   Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
    ```
 
 3. **Read prior research** (from `analysis.prior_research`):
@@ -171,11 +176,11 @@ Follow the research methodology prompt as your primary guide. The methodology de
    - For Atlassian research: `.bot/workspace/product/research-documents.md`
    - For public research: `.bot/workspace/product/research-internet.md`
    - For repo scan: `.bot/workspace/product/research-repos.md`
-   - For deep dives: `.bot/workspace/product/briefing/repos/{RepoName}.md`
+   - For deep dives: `.bot/workspace/product/research-repo-{RepoName}-summary.md`
 
 2. **Verify output quality** against the research-output standard:
    ```
-   read_files({ files: [{ path: ".bot/prompts/standards/global/research-output.md" }] })
+   Read({ file_path: ".bot/prompts/standards/global/research-output.md" })
    ```
    Check: completeness, evidence citations, no assumptions, correct structure.
 

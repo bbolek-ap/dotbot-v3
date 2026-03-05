@@ -20,10 +20,8 @@ Execute the implementation plans for each affected repository. All changes are c
 ### Step 1: Read Context
 
 ```
-read_files({ files: [
-  { path: ".bot/workspace/product/briefing/jira-context.md" },
-  { path: ".bot/workspace/product/briefing/04_IMPLEMENTATION_RESEARCH.md" }
-]})
+Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
+Read({ file_path: ".bot/workspace/product/briefing/04_IMPLEMENTATION_RESEARCH.md" })
 ```
 
 Check repo status:
@@ -35,9 +33,7 @@ mcp__dotbot__repo_list({})
 
 Read the dependency map if it exists:
 ```
-read_files({ files: [
-  { path: ".bot/workspace/product/briefing/05_DEPENDENCY_MAP.md" }
-]})
+Read({ file_path: ".bot/workspace/product/briefing/05_DEPENDENCY_MAP.md" })
 ```
 
 Follow the recommended implementation sequence. If no dependency map exists, implement in tier order (Tier 1 first).
@@ -90,9 +86,7 @@ When each implementation task executes:
 
 **4a. Read the plan:**
 ```
-read_files({ files: [
-  { path: "repos/{RepoName}/.bot/workspace/product/{RepoName}_Plan.md" }
-]})
+Read({ file_path: "repos/{RepoName}/.bot/workspace/product/{RepoName}_Plan.md" })
 ```
 
 **4b. Implement in order:**

@@ -19,12 +19,10 @@ After all deep dives complete, synthesize the findings into a single actionable 
 ### Step 1: Read All Research Artifacts
 
 ```
-read_files({ files: [
-  { path: ".bot/workspace/product/briefing/jira-context.md" },
-  { path: ".bot/workspace/product/research-documents.md" },
-  { path: ".bot/workspace/product/research-internet.md" },
-  { path: ".bot/workspace/product/research-repos.md" }
-]})
+Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
+Read({ file_path: ".bot/workspace/product/research-documents.md" })
+Read({ file_path: ".bot/workspace/product/research-internet.md" })
+Read({ file_path: ".bot/workspace/product/research-repos.md" })
 ```
 
 Then read all deep dive reports from `.bot/workspace/product/briefing/repos/*.md`.
@@ -32,7 +30,7 @@ Then read all deep dive reports from `.bot/workspace/product/briefing/repos/*.md
 ### Step 2: Load Implementation Research Template
 
 ```
-read_files({ files: [{ path: ".bot/prompts/implementation/research.md" }] })
+Read({ file_path: ".bot/prompts/implementation/research.md" })
 ```
 
 Follow this template's structure to produce the synthesis document.

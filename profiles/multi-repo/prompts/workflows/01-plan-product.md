@@ -25,10 +25,8 @@ Create two product documents:
 Read the briefing files created by Phase 0 (kickstart):
 
 ```
-read_files({ files: [
-  { path: ".bot/workspace/product/briefing/jira-context.md" },
-  { path: ".bot/workspace/product/interview-summary.md" }
-]})
+Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
+Read({ file_path: ".bot/workspace/product/interview-summary.md" })
 ```
 
 Extract:

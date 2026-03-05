@@ -19,9 +19,7 @@ After implementation, systematically compile and test each affected repo. Fix al
 ### Step 1: Read Context
 
 ```
-read_files({ files: [
-  { path: ".bot/workspace/product/briefing/jira-context.md" }
-]})
+Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
 ```
 
 Check repo status:

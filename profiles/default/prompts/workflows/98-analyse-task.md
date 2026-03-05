@@ -109,7 +109,7 @@ Read the entity model and identify entities involved in this task.
 
 1. **Read entity model:**
    ```
-   read_files({ files: [{ path: ".bot/workspace/product/entity-model.md" }] })
+   Read({ file_path: ".bot/workspace/product/entity-model.md" })
    ```
 
 2. **Identify entities:**
@@ -217,7 +217,7 @@ Extract ONLY the product context needed for this task.
 
 1. **Read mission (if needed):**
    ```
-   read_files({ files: [{ path: ".bot/workspace/product/mission.md" }] })
+   Read({ file_path: ".bot/workspace/product/mission.md" })
    ```
 
 2. **Extract relevant portions:**

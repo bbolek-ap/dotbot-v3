@@ -109,7 +109,7 @@ if (Get-Command gemini -ErrorAction SilentlyContinue) {
     Write-Success "Gemini CLI"
 } else {
     Write-DotbotWarning "Gemini CLI is not installed"
-    Write-Host "    Install: npm install -g @anthropic-ai/gemini-code" -ForegroundColor Cyan
+    Write-Host "    Install: npm install -g @google/gemini-cli" -ForegroundColor Cyan
     $depWarnings++
 }
 

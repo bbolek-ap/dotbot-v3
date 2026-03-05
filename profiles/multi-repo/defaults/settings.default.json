@@ -177,6 +177,71 @@
         "workflow": "12-publish-to-jira.md",
         "commit_paths": ["workspace/product/"],
         "commit_message": "chore(kickstart): publish research artifacts to Jira"
+      },
+      {
+        "id": "implementation-research",
+        "name": "Implementation Research",
+        "type": "llm",
+        "workflow": "05-implementation-research.md",
+        "condition": "file_exists:workspace/product/research-repos.md",
+        "required_outputs": ["briefing/04_IMPLEMENTATION_RESEARCH.md"],
+        "commit_paths": ["workspace/product/"],
+        "commit_message": "chore(kickstart): phase 8 — implementation research"
+      },
+      {
+        "id": "refine-artifacts",
+        "name": "Refine Artifacts",
+        "type": "llm",
+        "workflow": "07-refine-artifacts.md",
+        "condition": "file_exists:workspace/product/briefing/04_IMPLEMENTATION_RESEARCH.md",
+        "required_outputs": ["briefing/05_DEPENDENCY_MAP.md"],
+        "commit_paths": ["workspace/product/"],
+        "commit_message": "chore(kickstart): phase 9 — refine artifacts"
+      },
+      {
+        "id": "plan-implementation",
+        "name": "Implementation Plans",
+        "type": "llm",
+        "workflow": "06-plan-implementation.md",
+        "condition": "file_exists:workspace/product/briefing/04_IMPLEMENTATION_RESEARCH.md",
+        "commit_paths": ["workspace/product/"],
+        "commit_message": "chore(kickstart): phase 10 — implementation plans"
+      },
+      {
+        "id": "create-impl-tasks",
+        "name": "Implementation Tasks",
+        "type": "llm",
+        "workflow": "09-implement-changes.md",
+        "condition": "file_exists:workspace/product/briefing/04_IMPLEMENTATION_RESEARCH.md",
+        "required_outputs_dir": "tasks/todo",
+        "min_output_count": 1,
+        "commit_paths": ["workspace/tasks/", "workspace/product/"],
+        "commit_message": "chore(kickstart): phase 11 — implementation tasks created"
+      },
+      {
+        "id": "execute-implementation",
+        "name": "Execute Implementation",
+        "type": "workflow",
+        "condition": "file_exists:workspace/product/briefing/04_IMPLEMENTATION_RESEARCH.md"
+      },
+      {
+        "id": "remediate-builds",
+        "name": "Remediate Builds",
+        "type": "llm",
+        "workflow": "10-remediate-builds.md",
+        "condition": "file_exists:workspace/product/briefing/04_IMPLEMENTATION_RESEARCH.md",
+        "commit_paths": ["workspace/product/"],
+        "commit_message": "chore(kickstart): phase 13 — build remediation"
+      },
+      {
+        "id": "draft-handoff",
+        "name": "Handoff & Draft PRs",
+        "type": "llm",
+        "workflow": "11-draft-system-docs.md",
+        "condition": "file_exists:workspace/product/briefing/04_IMPLEMENTATION_RESEARCH.md",
+        "required_outputs": ["briefing/08_HANDOFF_STATUS.md"],
+        "commit_paths": ["workspace/product/"],
+        "commit_message": "chore(kickstart): phase 14 — handoff & draft PRs"
       }
     ]
   }

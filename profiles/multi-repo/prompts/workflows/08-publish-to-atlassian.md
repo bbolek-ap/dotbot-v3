@@ -20,10 +20,8 @@ Post research findings and implementation plans to Atlassian (Jira + Confluence)
 ### Step 1: Read Context
 
 ```
-read_files({ files: [
-  { path: ".bot/workspace/product/briefing/jira-context.md" },
-  { path: ".bot/workspace/product/mission.md" }
-]})
+Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
+Read({ file_path: ".bot/workspace/product/mission.md" })
 ```
 
 Also call `research_status` to see which artifacts exist:
@@ -57,10 +55,10 @@ For each MEDIUM+ impact repo from `research-repos.md`:
 ```
 mcp__atlassian__createJiraIssue({
   projectKey: "{PROJECT_KEY}",
-  issueType: "Sub-task",
+  issueTypeName: "Sub-task",
   summary: "[{JIRA_KEY}] {RepoName} - Implementation",
   description: "(from deep dive executive summary)",
-  parentKey: "{JIRA_KEY}"
+  parent: "{JIRA_KEY}"
 })
 ```
 
@@ -73,10 +71,10 @@ For each sub-task created, add a comment with the effort estimate from the deep 
 **3a. Create a Confluence page for the initiative:**
 ```
 mcp__atlassian__createConfluencePage({
-  spaceKey: "{SPACE_KEY}",
+  spaceId: "{SPACE_ID}",
   title: "{JIRA_KEY} - {INITIATIVE_NAME} Research",
   body: "(formatted content from implementation research)",
-  parentPageId: "{PARENT_PAGE_ID}"
+  parentId: "{PARENT_PAGE_ID}"
 })
 ```
 

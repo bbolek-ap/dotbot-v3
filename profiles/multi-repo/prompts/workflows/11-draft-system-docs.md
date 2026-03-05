@@ -24,9 +24,7 @@ The final phase of the multi-repo initiative lifecycle. For each affected repo, 
 ### Step 1: Read Context
 
 ```
-read_files({ files: [
-  { path: ".bot/workspace/product/briefing/jira-context.md" }
-]})
+Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
 ```
 
 Extract:
@@ -45,18 +43,14 @@ Process repos with `status: "implemented"` or `status: "handoff-ready"` (skip if
 
 Read the implementation artifacts:
 ```
-read_files({ files: [
-  { path: "repos/{RepoName}/.bot/workspace/product/{RepoName}_Outcomes.md" },
-  { path: "repos/{RepoName}/.bot/workspace/product/{RepoName}_Remediation.md" },
-  { path: ".bot/workspace/product/briefing/repos/{RepoName}.md" }
-]})
+Read({ file_path: "repos/{RepoName}/.bot/workspace/product/{RepoName}_Outcomes.md" })
+Read({ file_path: "repos/{RepoName}/.bot/workspace/product/{RepoName}_Remediation.md" })
+Read({ file_path: ".bot/workspace/product/briefing/repos/{RepoName}.md" })
 ```
 
 Also read the implementation plan for context:
 ```
-read_files({ files: [
-  { path: "repos/{RepoName}/.bot/workspace/product/{RepoName}_Plan.md" }
-]})
+Read({ file_path: "repos/{RepoName}/.bot/workspace/product/{RepoName}_Plan.md" })
 ```
 
 Write the handoff document to:
