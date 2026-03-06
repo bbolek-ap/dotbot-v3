@@ -131,6 +131,16 @@ if (Test-Path $settingsPath) {
     try { $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json } catch {}
 }
 
+# Override model selections from UI settings (ui-settings.json)
+$uiSettingsPath = Join-Path $botRoot ".control\ui-settings.json"
+if (Test-Path $uiSettingsPath) {
+    try {
+        $uiSettings = Get-Content $uiSettingsPath -Raw | ConvertFrom-Json
+        if ($uiSettings.analysisModel) { $settings.analysis.model = $uiSettings.analysisModel }
+        if ($uiSettings.executionModel) { $settings.execution.model = $uiSettings.executionModel }
+    } catch {}
+}
+
 # Load provider config
 $providerConfig = Get-ProviderConfig
 
