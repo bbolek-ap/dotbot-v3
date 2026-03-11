@@ -344,6 +344,13 @@ try {
                         } catch {}
                     }
 
+                    $kickstartPhases = $null
+                    if ($settingsData.kickstart.phases) {
+                        $kickstartPhases = @($settingsData.kickstart.phases | ForEach-Object {
+                            @{ id = $_.id; name = $_.name; optional = [bool]$_.optional }
+                        })
+                    }
+
                     $content = @{
                         project_name = $projectName
                         project_root = $projectRoot
@@ -352,6 +359,7 @@ try {
                         has_existing_code = $hasExistingCode
                         profile = $profileName
                         kickstart_dialog = $kickstartDialog
+                        kickstart_phases = $kickstartPhases
                     } | ConvertTo-Json -Depth 5 -Compress
                     break
                 }
@@ -450,6 +458,80 @@ try {
                     else {
                         $statusCode = 405
                         $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
+                    }
+                    break
+                }
+
+                "/api/aether/bond" {
+                    $contentType = "application/json; charset=utf-8"
+                    if ($method -eq "POST") {
+                        try {
+                            $reader = New-Object System.IO.StreamReader($request.InputStream)
+                            $bodyJson = $reader.ReadToEnd()
+                            $reader.Close()
+                            $bodyObj = $bodyJson | ConvertFrom-Json
+                            $result = Invoke-ConduitBond -IP $bodyObj.conduit
+                            $content = $result | ConvertTo-Json -Depth 5 -Compress
+                        } catch {
+                            $statusCode = 500
+                            $content = @{ success = $false; error = "Bond failed: $($_.Exception.Message)" } | ConvertTo-Json -Compress
+                        }
+                    } else {
+                        $statusCode = 405
+                        $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
+                    }
+                    break
+                }
+
+                "/api/aether/command" {
+                    $contentType = "application/json; charset=utf-8"
+                    if ($method -eq "POST") {
+                        try {
+                            $reader = New-Object System.IO.StreamReader($request.InputStream)
+                            $bodyJson = $reader.ReadToEnd()
+                            $reader.Close()
+                            $bodyObj = $bodyJson | ConvertFrom-Json
+                            $config = Get-AetherConfig
+                            if (-not $config.conduit -or -not $config.token) {
+                                $statusCode = 400
+                                $content = @{ success = $false; error = "Aether not configured" } | ConvertTo-Json -Compress
+                            } else {
+                                $stateJson = $bodyObj.state | ConvertTo-Json -Depth 5 -Compress
+                                $result = Invoke-ConduitCommand -IP $config.conduit -Token $config.token -Nodes @($bodyObj.nodes) -State $stateJson
+                                $content = $result | ConvertTo-Json -Depth 5 -Compress
+                            }
+                        } catch {
+                            $statusCode = 500
+                            $content = @{ success = $false; error = "Command failed: $($_.Exception.Message)" } | ConvertTo-Json -Compress
+                        }
+                    } else {
+                        $statusCode = 405
+                        $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
+                    }
+                    break
+                }
+
+                "/api/aether/nodes" {
+                    $contentType = "application/json; charset=utf-8"
+                    $config = Get-AetherConfig
+                    if (-not $config.conduit -or -not $config.token) {
+                        $statusCode = 400
+                        $content = @{ success = $false; error = "Aether not configured" } | ConvertTo-Json -Compress
+                    } else {
+                        $result = Get-ConduitNodes -IP $config.conduit -Token $config.token
+                        $content = $result | ConvertTo-Json -Depth 5 -Compress
+                    }
+                    break
+                }
+
+                "/api/aether/verify" {
+                    $contentType = "application/json; charset=utf-8"
+                    $config = Get-AetherConfig
+                    if (-not $config.conduit -or -not $config.token) {
+                        $content = @{ valid = $false } | ConvertTo-Json -Compress
+                    } else {
+                        $result = Test-ConduitLink -IP $config.conduit -Token $config.token
+                        $content = $result | ConvertTo-Json -Compress
                     }
                     break
                 }
@@ -808,7 +890,7 @@ try {
                                 $statusCode = 400
                                 $content = @{ success = $false; error = "Missing required 'prompt' field" } | ConvertTo-Json -Compress
                             } else {
-                                $result = Start-ProductKickstart -UserPrompt $body.prompt -Files @($body.files) -NeedsInterview ($body.needs_interview -eq $true) -AutoWorkflow ($body.auto_workflow -eq $true)
+                                $result = Start-ProductKickstart -UserPrompt $body.prompt -Files @($body.files) -NeedsInterview ($body.needs_interview -eq $true) -AutoWorkflow ($body.auto_workflow -eq $true) -SkipPhases @($body.skip_phases)
                                 if ($result._statusCode) { $statusCode = $result._statusCode; $result.Remove('_statusCode') }
                                 $content = $result | ConvertTo-Json -Compress
                             }
@@ -950,6 +1032,121 @@ try {
                     break
                 }
 
+                "/api/task/ignore" {
+                    if ($method -eq "POST") {
+                        $contentType = "application/json; charset=utf-8"
+                        try {
+                            $reader = New-Object System.IO.StreamReader($request.InputStream)
+                            $body = $reader.ReadToEnd() | ConvertFrom-Json
+                            $reader.Close()
+
+                            if (-not $body.task_id) {
+                                $statusCode = 400
+                                $content = @{ success = $false; error = "Missing required 'task_id' field" } | ConvertTo-Json -Compress
+                            } else {
+                                $content = Set-RoadmapTaskIgnore -TaskId $body.task_id -Ignored ($body.ignored -eq $true) -Actor $body.actor | ConvertTo-Json -Depth 10 -Compress
+                            }
+                        } catch {
+                            $statusCode = 500
+                            $content = @{ success = $false; error = "Failed to toggle ignore: $($_.Exception.Message)" } | ConvertTo-Json -Compress
+                        }
+                    } else {
+                        $statusCode = 405
+                        $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
+                    }
+                    break
+                }
+
+                "/api/task/edit" {
+                    if ($method -eq "POST") {
+                        $contentType = "application/json; charset=utf-8"
+                        try {
+                            $reader = New-Object System.IO.StreamReader($request.InputStream)
+                            $body = $reader.ReadToEnd() | ConvertFrom-Json
+                            $reader.Close()
+
+                            if (-not $body.task_id) {
+                                $statusCode = 400
+                                $content = @{ success = $false; error = "Missing required 'task_id' field" } | ConvertTo-Json -Compress
+                            } elseif (-not $body.updates) {
+                                $statusCode = 400
+                                $content = @{ success = $false; error = "Missing required 'updates' field" } | ConvertTo-Json -Compress
+                            } else {
+                                $content = Update-RoadmapTask -TaskId $body.task_id -Updates $body.updates -Actor $body.actor | ConvertTo-Json -Depth 10 -Compress
+                            }
+                        } catch {
+                            $statusCode = 500
+                            $content = @{ success = $false; error = "Failed to edit task: $($_.Exception.Message)" } | ConvertTo-Json -Compress
+                        }
+                    } else {
+                        $statusCode = 405
+                        $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
+                    }
+                    break
+                }
+
+                "/api/task/delete" {
+                    if ($method -eq "POST") {
+                        $contentType = "application/json; charset=utf-8"
+                        try {
+                            $reader = New-Object System.IO.StreamReader($request.InputStream)
+                            $body = $reader.ReadToEnd() | ConvertFrom-Json
+                            $reader.Close()
+
+                            if (-not $body.task_id) {
+                                $statusCode = 400
+                                $content = @{ success = $false; error = "Missing required 'task_id' field" } | ConvertTo-Json -Compress
+                            } else {
+                                $content = Delete-RoadmapTask -TaskId $body.task_id -Actor $body.actor | ConvertTo-Json -Depth 10 -Compress
+                            }
+                        } catch {
+                            $statusCode = 500
+                            $content = @{ success = $false; error = "Failed to delete task: $($_.Exception.Message)" } | ConvertTo-Json -Compress
+                        }
+                    } else {
+                        $statusCode = 405
+                        $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
+                    }
+                    break
+                }
+
+                "/api/task/deleted" {
+                    $contentType = "application/json; charset=utf-8"
+                    $content = Get-DeletedRoadmapTasks | ConvertTo-Json -Depth 20 -Compress
+                    break
+                }
+
+                "/api/task/restore-version" {
+                    if ($method -eq "POST") {
+                        $contentType = "application/json; charset=utf-8"
+                        try {
+                            $reader = New-Object System.IO.StreamReader($request.InputStream)
+                            $body = $reader.ReadToEnd() | ConvertFrom-Json
+                            $reader.Close()
+
+                            if (-not $body.task_id -or -not $body.version_id) {
+                                $statusCode = 400
+                                $content = @{ success = $false; error = "Missing required 'task_id' or 'version_id' field" } | ConvertTo-Json -Compress
+                            } else {
+                                $content = Restore-RoadmapTaskVersion -TaskId $body.task_id -VersionId $body.version_id -Actor $body.actor | ConvertTo-Json -Depth 10 -Compress
+                            }
+                        } catch {
+                            $statusCode = 500
+                            $content = @{ success = $false; error = "Failed to restore task version: $($_.Exception.Message)" } | ConvertTo-Json -Compress
+                        }
+                    } else {
+                        $statusCode = 405
+                        $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
+                    }
+                    break
+                }
+
+                { $_ -like "/api/task/history/*" } {
+                    $contentType = "application/json; charset=utf-8"
+                    $taskId = [System.Web.HttpUtility]::UrlDecode(($url -replace "^/api/task/history/", ""))
+                    $content = Get-RoadmapTaskHistory -TaskId $taskId | ConvertTo-Json -Depth 20 -Compress
+                    break
+                }
                 "/api/task/create" {
                     if ($method -eq "POST") {
                         $contentType = "application/json; charset=utf-8"
@@ -977,7 +1174,7 @@ try {
 
                 { $_ -like "/api/plan/*" } {
                     $contentType = "application/json; charset=utf-8"
-                    $taskId = [System.Web.HttpUtility]::UrlDecode($url -replace "^/api/plan/", "")
+                    $taskId = [System.Web.HttpUtility]::UrlDecode(($url -replace "^/api/plan/", ""))
                     $result = Get-TaskPlan -TaskId $taskId
                     if ($result._statusCode) { $statusCode = $result._statusCode; $result.Remove('_statusCode') }
                     $content = $result | ConvertTo-Json -Depth 5 -Compress
@@ -1293,3 +1490,4 @@ try {
     }
     Write-Status "Server stopped" -Type Warn
 }
+

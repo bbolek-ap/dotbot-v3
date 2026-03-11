@@ -263,7 +263,7 @@ function Invoke-Profiles {
     Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "    dotbot init --profile dotnet" -ForegroundColor White
-    Write-Host "    dotbot init --profile multi-repo,dotnet-blazor,dotnet-ef" -ForegroundColor White
+    Write-Host "    dotbot init --profile kickstart-via-jira,dotnet-blazor,dotnet-ef" -ForegroundColor White
     Write-Host ""
 }
 

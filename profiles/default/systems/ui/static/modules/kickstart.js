@@ -49,6 +49,29 @@ async function initKickstart() {
                 if (hintEl && dialog.interview_hint) hintEl.textContent = dialog.interview_hint;
                 if (promptEl && dialog.prompt_placeholder) promptEl.placeholder = dialog.prompt_placeholder;
             }
+
+            // Render phase checklist
+            const phases = info.kickstart_phases || [];
+            const container = document.getElementById('kickstart-phases-container');
+            const wrapper = document.getElementById('kickstart-phase-list');
+            if (container && phases.length > 0) {
+                wrapper.style.display = 'block';
+                container.innerHTML = phases.map(p => {
+                    if (p.optional) {
+                        return `<div class="phase-item">
+                            <label class="form-checkbox-label">
+                                <input type="checkbox" class="kickstart-phase-toggle" data-phase-id="${p.id}" checked>
+                                <span class="form-checkbox-text">${p.name}</span>
+                            </label>
+                        </div>`;
+                    } else {
+                        return `<div class="phase-item phase-fixed">
+                            <span class="phase-bullet">\u203a</span>
+                            <span class="form-checkbox-text">${p.name}</span>
+                        </div>`;
+                    }
+                }).join('');
+            }
         }
     } catch (error) {
         console.warn('Could not load kickstart dialog config:', error);
@@ -309,6 +332,11 @@ async function submitKickstart() {
     const needsInterview = document.getElementById('kickstart-interview')?.checked ?? true;
     const autoWorkflow = document.getElementById('kickstart-auto-workflow')?.checked ?? true;
 
+    const skipPhases = [];
+    document.querySelectorAll('.kickstart-phase-toggle:not(:checked)').forEach(cb => {
+        skipPhases.push(cb.dataset.phaseId);
+    });
+
     if (!prompt) {
         showToast('Please describe your project', 'warning');
         return;
@@ -321,7 +349,7 @@ async function submitKickstart() {
     }
 
     // Show preflight modal immediately with "Checking..." state
-    showPreflightPhaseChecking(prompt, needsInterview, autoWorkflow);
+    showPreflightPhaseChecking(prompt, needsInterview, autoWorkflow, skipPhases);
 
     try {
         // Fetch preflight checks in background
@@ -332,10 +360,10 @@ async function submitKickstart() {
         if (checks.length === 0) {
             // No preflight configured — go straight to kickstart
             resetToFormPhase();
-            await executeKickstart(prompt, needsInterview, autoWorkflow);
+            await executeKickstart(prompt, needsInterview, autoWorkflow, skipPhases);
         } else {
             // Update preflight phase with real results and animate
-            updatePreflightWithResults(checks, preflight.success, prompt, needsInterview, autoWorkflow);
+            updatePreflightWithResults(checks, preflight.success, prompt, needsInterview, autoWorkflow, skipPhases);
         }
     } catch (error) {
         console.error('Error during preflight:', error);
@@ -351,7 +379,7 @@ async function submitKickstart() {
 /**
  * Execute the actual kickstart POST request
  */
-async function executeKickstart(prompt, needsInterview, autoWorkflow) {
+async function executeKickstart(prompt, needsInterview, autoWorkflow, skipPhases = []) {
     const submitBtn = document.getElementById('kickstart-submit');
 
     try {
@@ -362,6 +390,7 @@ async function executeKickstart(prompt, needsInterview, autoWorkflow) {
                 prompt: prompt,
                 needs_interview: needsInterview,
                 auto_workflow: autoWorkflow,
+                skip_phases: skipPhases,
                 files: kickstartFiles.map(f => ({
                     name: f.name,
                     content: f.content
@@ -407,7 +436,7 @@ async function executeKickstart(prompt, needsInterview, autoWorkflow) {
  * Show the preflight phase immediately with a "Checking..." spinner
  * before results arrive from the server.
  */
-function showPreflightPhaseChecking(prompt, needsInterview, autoWorkflow) {
+function showPreflightPhaseChecking(prompt, needsInterview, autoWorkflow, skipPhases = []) {
     const phaseForm = document.getElementById('kickstart-phase-form');
     const phasePreflight = document.getElementById('kickstart-phase-preflight');
     const footerForm = document.getElementById('kickstart-footer-form');
@@ -441,7 +470,7 @@ function showPreflightPhaseChecking(prompt, needsInterview, autoWorkflow) {
 /**
  * Update preflight phase with real results after server responds
  */
-function updatePreflightWithResults(checks, allPassed, prompt, needsInterview, autoWorkflow) {
+function updatePreflightWithResults(checks, allPassed, prompt, needsInterview, autoWorkflow, skipPhases = []) {
     const checklist = document.getElementById('preflight-checklist');
     const footer = document.getElementById('preflight-footer');
     const retryBtn = document.getElementById('kickstart-preflight-retry');
@@ -475,7 +504,7 @@ function updatePreflightWithResults(checks, allPassed, prompt, needsInterview, a
         showPreflightResult(allPassed, footer);
         if (allPassed) {
             // Auto-submit after 1.5s
-            setTimeout(() => executeKickstart(prompt, needsInterview, autoWorkflow), 1500);
+            setTimeout(() => executeKickstart(prompt, needsInterview, autoWorkflow, skipPhases), 1500);
         } else {
             retryBtn.classList.remove('hidden');
         }
@@ -483,13 +512,13 @@ function updatePreflightWithResults(checks, allPassed, prompt, needsInterview, a
 
     // Bind handlers
     backBtn.onclick = resetToFormPhase;
-    retryBtn.onclick = () => retryPreflight(prompt, needsInterview, autoWorkflow);
+    retryBtn.onclick = () => retryPreflight(prompt, needsInterview, autoWorkflow, skipPhases);
 }
 
 /**
  * Show the preflight checklist phase with staggered animation (used by retry)
  */
-function showPreflightPhase(checks, allPassed, prompt, needsInterview, autoWorkflow) {
+function showPreflightPhase(checks, allPassed, prompt, needsInterview, autoWorkflow, skipPhases = []) {
     const phaseForm = document.getElementById('kickstart-phase-form');
     const phasePreflight = document.getElementById('kickstart-phase-preflight');
     const footerForm = document.getElementById('kickstart-footer-form');
@@ -535,7 +564,7 @@ function showPreflightPhase(checks, allPassed, prompt, needsInterview, autoWorkf
         showPreflightResult(allPassed, footer);
         if (allPassed) {
             // Auto-submit after 1.5s
-            setTimeout(() => executeKickstart(prompt, needsInterview, autoWorkflow), 1500);
+            setTimeout(() => executeKickstart(prompt, needsInterview, autoWorkflow, skipPhases), 1500);
         } else {
             retryBtn.classList.remove('hidden');
         }
@@ -543,7 +572,7 @@ function showPreflightPhase(checks, allPassed, prompt, needsInterview, autoWorkf
 
     // Bind handlers
     backBtn.onclick = resetToFormPhase;
-    retryBtn.onclick = () => retryPreflight(prompt, needsInterview, autoWorkflow);
+    retryBtn.onclick = () => retryPreflight(prompt, needsInterview, autoWorkflow, skipPhases);
 }
 
 /**
@@ -617,16 +646,16 @@ function resetToFormPhase() {
 /**
  * Retry preflight checks — re-fetch and re-animate
  */
-async function retryPreflight(prompt, needsInterview, autoWorkflow) {
+async function retryPreflight(prompt, needsInterview, autoWorkflow, skipPhases = []) {
     try {
         const preResp = await fetch(`${API_BASE}/api/product/preflight`);
         const preflight = await preResp.json();
         const checks = preflight.checks || [];
 
         if (checks.length === 0) {
-            await executeKickstart(prompt, needsInterview, autoWorkflow);
+            await executeKickstart(prompt, needsInterview, autoWorkflow, skipPhases);
         } else {
-            showPreflightPhase(checks, preflight.success, prompt, needsInterview, autoWorkflow);
+            showPreflightPhase(checks, preflight.success, prompt, needsInterview, autoWorkflow, skipPhases);
         }
     } catch (error) {
         showToast('Error retrying preflight: ' + error.message, 'error');

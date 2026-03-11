@@ -129,15 +129,17 @@ const Aether = (function() {
                 return { status: 'linked', conduit: _conduit };
             }
 
-            // IP may have changed - try discovery with existing token
+            // Verify failed — try discovery, then re-verify (IP may have changed)
             const discovered = await scan();
-            if (discovered && discovered.ip !== _conduit) {
-                // Found bridge at new IP - verify token still works there
-                _conduit = discovered.ip;
-                const validAtNewIp = await verifyLink();
-                if (validAtNewIp) {
+            if (discovered) {
+                if (discovered.ip !== _conduit) {
+                    _conduit = discovered.ip;
+                }
+                // Re-verify at discovered IP (handles both same-IP transient failure and IP change)
+                const validAtDiscoveredIp = await verifyLink();
+                if (validAtDiscoveredIp) {
                     _linked = true;
-                    await saveLink();  // Update cached IP
+                    await saveLink();
                     showNavItem(true);
                     startIdleBreathe();
                     return { status: 'linked', conduit: _conduit };
@@ -194,13 +196,17 @@ const Aether = (function() {
 
         return new Promise((resolve) => {
             let elapsed = 0;
+            let bonded = false;
 
             _bondingInterval = setInterval(async () => {
+                if (bonded) return;  // Already bonded, skip overlapping ticks
                 elapsed += BOND_POLL_INTERVAL;
 
                 // Try to create a token
                 const token = await attemptBond(discovered.ip);
+                if (bonded) return;  // Another tick beat us to it
                 if (token) {
+                    bonded = true;
                     stopBonding();
                     _token = token;
                     _linked = true;
@@ -218,6 +224,7 @@ const Aether = (function() {
                     // Load nodes after short delay
                     setTimeout(() => loadNodes(), 500);
                     resolve(true);
+                    return;
                 }
 
                 if (elapsed >= BOND_TIMEOUT) {
@@ -240,18 +247,17 @@ const Aether = (function() {
      */
     async function attemptBond(ip) {
         try {
-            const response = await fetch(`http://${ip}/api`, {
+            const response = await fetch(`${API_BASE}/api/aether/bond`, {
                 method: 'POST',
-                body: JSON.stringify({
-                    devicetype: 'dotbot#aether'
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conduit: ip })
             });
 
             if (!response.ok) return null;
 
             const data = await response.json();
-            if (Array.isArray(data) && data[0] && data[0].success) {
-                return data[0].success.username;
+            if (data.success && data.username) {
+                return data.username;
             }
         } catch (e) {
             // Expected to fail until button is pressed
@@ -281,8 +287,10 @@ const Aether = (function() {
         if (!_conduit || !_token) return false;
 
         try {
-            const response = await fetch(`http://${_conduit}/api/${_token}/lights`);
-            return response.ok;
+            const response = await fetch(`${API_BASE}/api/aether/verify`);
+            if (!response.ok) return false;
+            const data = await response.json();
+            return data.valid === true;
         } catch (e) {
             return false;
         }
@@ -297,21 +305,17 @@ const Aether = (function() {
         if (!_linked || !_conduit || !_token) return [];
 
         try {
-            const response = await fetch(`http://${_conduit}/api/${_token}/lights`);
+            const response = await fetch(`${API_BASE}/api/aether/nodes`);
             if (!response.ok) return [];
 
             const data = await response.json();
-            const nodes = [];
+            if (!data.success) return [];
 
-            for (const [id, light] of Object.entries(data)) {
-                nodes.push({
-                    id: id,
-                    name: light.name,
-                    type: light.type,
-                    reachable: light.state && light.state.reachable
-                });
+            const nodes = data.nodes || [];
+
+            for (const node of nodes) {
                 // Cache node names for preservation
-                _nodeNamesCache[id] = light.name;
+                _nodeNamesCache[node.id] = node.name;
             }
 
             // Auto-select all reachable nodes if none selected
@@ -442,6 +446,28 @@ const Aether = (function() {
     }
 
     /**
+     * Send a command to selected nodes via backend proxy
+     * Returns true if any node succeeded, false otherwise
+     */
+    async function sendCommand(state) {
+        if (!_linked || !_conduit || !_token || _selectedNodes.length === 0) return false;
+
+        try {
+            const response = await fetch(`${API_BASE}/api/aether/command`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    nodes: _selectedNodes,
+                    state: state
+                })
+            });
+            return response.ok;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /**
      * Breathe - throb between bright and dim in the primary color
      * Creates a gentle pulsing effect during coding
      * Returns true if successful, false if connection failed
@@ -455,24 +481,12 @@ const Aether = (function() {
         const brightness = _breathePhase ? 80 : 254;  // Dim or bright
         const transition = _breathePhase ? 8 : 5;     // 800ms to dim, 500ms to bright
 
-        let anySuccess = false;
-        for (const nodeId of _selectedNodes) {
-            try {
-                const response = await fetch(`http://${_conduit}/api/${_token}/lights/${nodeId}/state`, {
-                    method: 'PUT',
-                    body: JSON.stringify({
-                        on: true,
-                        xy: color.xy,
-                        bri: brightness,
-                        transitiontime: transition
-                    })
-                });
-                if (response.ok) anySuccess = true;
-            } catch (e) {
-                // Connection failure
-            }
-        }
-        return anySuccess;
+        return await sendCommand({
+            on: true,
+            xy: color.xy,
+            bri: brightness,
+            transitiontime: transition
+        });
     }
 
     /**
@@ -525,21 +539,12 @@ const Aether = (function() {
             const colorName = THEME_COLORS[i];
             const color = COLORS(colorName);
 
-            for (const nodeId of _selectedNodes) {
-                try {
-                    await fetch(`http://${_conduit}/api/${_token}/lights/${nodeId}/state`, {
-                        method: 'PUT',
-                        body: JSON.stringify({
-                            on: true,
-                            xy: color.xy,
-                            bri: 254,
-                            transitiontime: 1  // 100ms quick transition
-                        })
-                    });
-                } catch (e) {
-                    // Ignore individual failures
-                }
-            }
+            await sendCommand({
+                on: true,
+                xy: color.xy,
+                bri: 254,
+                transitiontime: 1  // 100ms quick transition
+            });
 
             // Wait between colors (200ms per color)
             if (i < THEME_COLORS.length - 1) {
@@ -555,22 +560,12 @@ const Aether = (function() {
         if (!_linked || !_conduit || !_token || _selectedNodes.length === 0) return;
 
         const color = COLORS(colorName);
-
-        for (const nodeId of _selectedNodes) {
-            try {
-                await fetch(`http://${_conduit}/api/${_token}/lights/${nodeId}/state`, {
-                    method: 'PUT',
-                    body: JSON.stringify({
-                        on: true,
-                        xy: color.xy,
-                        bri: 254,
-                        transitiontime: 1  // 100ms quick
-                    })
-                });
-            } catch (e) {
-                // Ignore individual failures
-            }
-        }
+        await sendCommand({
+            on: true,
+            xy: color.xy,
+            bri: 254,
+            transitiontime: 1  // 100ms quick
+        });
     }
 
     /**
@@ -582,21 +577,12 @@ const Aether = (function() {
         const color = COLORS(colorName);
         const bri = brightness || 100;
 
-        for (const nodeId of _selectedNodes) {
-            try {
-                await fetch(`http://${_conduit}/api/${_token}/lights/${nodeId}/state`, {
-                    method: 'PUT',
-                    body: JSON.stringify({
-                        on: true,
-                        xy: color.xy,
-                        bri: bri,
-                        transitiontime: 1  // 100ms transition
-                    })
-                });
-            } catch (e) {
-                // Ignore individual failures
-            }
-        }
+        await sendCommand({
+            on: true,
+            xy: color.xy,
+            bri: bri,
+            transitiontime: 1  // 100ms transition
+        });
     }
 
     /**
@@ -606,20 +592,10 @@ const Aether = (function() {
         if (!_linked || !_conduit || !_token || _selectedNodes.length === 0) return;
 
         const color = COLORS(colorName);
-
-        for (const nodeId of _selectedNodes) {
-            try {
-                await fetch(`http://${_conduit}/api/${_token}/lights/${nodeId}/state`, {
-                    method: 'PUT',
-                    body: JSON.stringify({
-                        alert: 'select',
-                        xy: color.xy
-                    })
-                });
-            } catch (e) {
-                // Ignore individual failures
-            }
-        }
+        await sendCommand({
+            alert: 'select',
+            xy: color.xy
+        });
     }
 
     /**
@@ -631,20 +607,11 @@ const Aether = (function() {
         const color = COLORS(colorName);
         const bri = brightness || color.bri;
 
-        for (const nodeId of _selectedNodes) {
-            try {
-                await fetch(`http://${_conduit}/api/${_token}/lights/${nodeId}/state`, {
-                    method: 'PUT',
-                    body: JSON.stringify({
-                        on: true,
-                        xy: color.xy,
-                        bri: bri
-                    })
-                });
-            } catch (e) {
-                // Ignore individual failures
-            }
-        }
+        await sendCommand({
+            on: true,
+            xy: color.xy,
+            bri: bri
+        });
     }
 
     /**

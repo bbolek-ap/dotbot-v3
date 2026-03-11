@@ -473,10 +473,13 @@
                                 <div class="pipeline-container">
                                     <!-- Todo Column -->
                                     <div class="pipeline-column">
-                                        <div class="column-header">
+                                        <div class="column-header roadmap-column-header">
                                             <span class="column-label">◇ Todo</span>
-                                            <span class="column-count" id="pipeline-todo-count">0</span>
-                                            <button class="ctrl-btn-sm primary add-task-btn" id="add-task-btn-pipeline" title="Add new task">New Task</button>
+                                            <div class="roadmap-column-actions">
+                                                <span class="column-count" id="pipeline-todo-count">0</span>
+                                                <button class="ctrl-btn-sm roadmap-header-action" id="roadmap-deleted-btn" title="View deleted task archive">Deleted</button>
+                                                <button class="ctrl-btn-sm primary add-task-btn roadmap-header-action" id="add-task-btn-pipeline" title="Add new task">New Task</button>
+                                            </div>
                                         </div>
                                         <div class="column-items" id="pipeline-todo">
                                             <div class="loading-state">Loading...</div>
@@ -1036,6 +1039,9 @@
         <!-- Footer (v3 style) -->
         <footer class="footer">
             <div class="footer-left">
+                <span class="footer-label">INSTANCE ID:</span>
+                <span class="footer-value" id="instance-id">--</span>
+                <span class="footer-sep">|</span>
                 <span class="footer-label">LAST UPDATE:</span>
                 <span class="footer-value" id="last-update">--:--:--</span>
                 <span class="footer-sep">|</span>
@@ -1155,6 +1161,88 @@
         </div>
     </div>
 
+    <!-- Roadmap Task Edit Modal -->
+    <div class="modal-overlay" id="task-edit-modal">
+        <div class="modal modal-task-edit">
+            <div class="modal-header">
+                <span class="modal-title" id="task-edit-modal-title">Edit Task</span>
+                <button class="modal-close" id="task-edit-modal-close"><!-- Close icon loaded dynamically --></button>
+            </div>
+            <div class="modal-body task-edit-modal-body">
+                <div class="task-edit-layout">
+                    <div class="task-edit-form">
+                        <input type="hidden" id="task-edit-id">
+                        <div class="form-group">
+                            <label class="form-label">Task Name</label>
+                            <input class="form-input" id="task-edit-name" type="text">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-textarea" id="task-edit-description" rows="4"></textarea>
+                        </div>
+                        <div class="task-edit-grid">
+                            <div class="form-group">
+                                <label class="form-label">Category</label>
+                                <input class="form-input" id="task-edit-category" type="text">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Priority</label>
+                                <input class="form-input" id="task-edit-priority" type="number" min="1">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Effort</label>
+                                <input class="form-input" id="task-edit-effort" type="text">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Dependencies (one per line)</label>
+                            <textarea class="form-textarea" id="task-edit-dependencies" rows="3"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Implementation Steps (one per line)</label>
+                            <textarea class="form-textarea" id="task-edit-steps" rows="5"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Acceptance Criteria (one per line)</label>
+                            <textarea class="form-textarea" id="task-edit-criteria" rows="4"></textarea>
+                        </div>
+                    </div>
+                    <aside class="task-history-panel">
+                        <div class="task-history-panel-header">
+                            <span class="task-history-title">Version History</span>
+                            <button class="ctrl-btn-sm roadmap-header-action" id="task-edit-refresh-history">Refresh</button>
+                        </div>
+                        <div class="task-history-list" id="task-edit-history-list">
+                            <div class="loading-state">Loading version history...</div>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="ctrl-btn" id="task-edit-cancel">Cancel</button>
+                <button class="ctrl-btn primary" id="task-edit-save">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Deleted Tasks Archive Modal -->
+    <div class="modal-overlay" id="deleted-tasks-modal">
+        <div class="modal modal-wide modal-deleted-archive">
+            <div class="modal-header">
+                <span class="modal-title">Deleted Task Archive</span>
+                <button class="modal-close" id="deleted-tasks-modal-close"><!-- Close icon loaded dynamically --></button>
+            </div>
+            <div class="modal-body deleted-tasks-modal-body">
+                <div class="deleted-tasks-summary" id="deleted-tasks-summary">Loading archive...</div>
+                <div class="task-history-list deleted-tasks-list" id="deleted-tasks-list">
+                    <div class="loading-state">Loading deleted task archive...</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="ctrl-btn" id="deleted-tasks-close">Close</button>
+            </div>
+        </div>
+    </div>
     <!-- Task Creation Modal -->
     <div class="modal-overlay" id="task-create-modal">
         <div class="modal modal-wide">
@@ -1233,6 +1321,10 @@
                                 <span class="form-checkbox-text" id="kickstart-auto-workflow-label">Auto-execute created tasks</span>
                             </label>
                             <div class="form-option-hint" id="kickstart-auto-workflow-hint">Automatically analyse and execute tasks after kickstart creates them</div>
+                        </div>
+                        <div id="kickstart-phase-list" class="kickstart-phase-list" style="display: none;">
+                            <label class="form-label">Pipeline</label>
+                            <div id="kickstart-phases-container"></div>
                         </div>
                     </div>
                 </div>
@@ -1318,6 +1410,7 @@
     <script src="modules/product.js"></script>
     <script src="modules/kickstart.js"></script>
     <script src="modules/tasks.js"></script>
+    <script src="modules/roadmap-task-actions.js"></script>
     <script src="modules/processes.js"></script>
     <script src="modules/editor.js"></script>
     <script src="modules/controls.js"></script>
@@ -1332,3 +1425,4 @@
     <script src="app.js"></script>
 </body>
 </html>
+

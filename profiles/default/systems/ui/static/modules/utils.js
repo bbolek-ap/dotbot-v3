@@ -230,9 +230,9 @@ function formatDuration(startIso, endIso) {
         }
         if (hours > 0) {
             const remainingMins = mins % 60;
-            return remainingMins > 0 ? `${hours}h ${remainingMins}m` : `${hours}h`;
+            return remainingMins > 0 ? `${hours}h ${remainingMins}min` : `${hours}h`;
         }
-        return `${mins}m`;
+        return `${mins}min`;
     } catch (e) {
         return '';
     }

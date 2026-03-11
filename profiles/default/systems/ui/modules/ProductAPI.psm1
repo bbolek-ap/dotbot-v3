@@ -23,13 +23,77 @@ function Initialize-ProductAPI {
     $script:Config.ControlDir = $ControlDir
 }
 
+function Resolve-ProductDocumentInfo {
+    param(
+        [Parameter(Mandatory)] [System.IO.FileInfo]$File,
+        [Parameter(Mandatory)] [string]$ProductDir
+    )
+
+    $relativePath = [System.IO.Path]::GetRelativePath($ProductDir, $File.FullName) -replace '\\', '/'
+    $name = $relativePath -replace '\.md$', ''
+    $segments = @($name -split '/')
+
+    return [PSCustomObject]@{
+        Name = $name
+        Filename = $relativePath
+        Depth = [Math]::Max(0, $segments.Count - 1)
+        BaseName = $File.BaseName
+    }
+}
+
+function Resolve-ProductDocumentPath {
+    param(
+        [Parameter(Mandatory)] [string]$Name,
+        [Parameter(Mandatory)] [string]$ProductDir
+    )
+
+    $decodedName = [System.Web.HttpUtility]::UrlDecode($Name)
+    if ([string]::IsNullOrWhiteSpace($decodedName)) {
+        return $null
+    }
+
+    $normalizedName = ($decodedName.Trim() -replace '\\', '/').TrimStart('/')
+    if ($normalizedName.EndsWith('.md', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $normalizedName = $normalizedName.Substring(0, $normalizedName.Length - 3)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($normalizedName)) {
+        return $null
+    }
+
+    $relativePath = ($normalizedName -split '/') -join [System.IO.Path]::DirectorySeparatorChar
+    $candidatePath = Join-Path $ProductDir "$relativePath.md"
+
+    try {
+        $productDirFull = [System.IO.Path]::GetFullPath($ProductDir)
+        $candidateFull = [System.IO.Path]::GetFullPath($candidatePath)
+    } catch {
+        return $null
+    }
+
+    $productPrefix = if ($productDirFull.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+        $productDirFull
+    } else {
+        "$productDirFull$([System.IO.Path]::DirectorySeparatorChar)"
+    }
+
+    if ($candidateFull -notlike "$productPrefix*") {
+        return $null
+    }
+
+    return @{
+        Name = $normalizedName
+        FullPath = $candidateFull
+    }
+}
+
 function Get-ProductList {
     $botRoot = $script:Config.BotRoot
     $productDir = Join-Path $botRoot "workspace\product"
     $docs = @()
 
     if (Test-Path $productDir) {
-        $mdFiles = @(Get-ChildItem -Path $productDir -Filter "*.md" -ErrorAction SilentlyContinue)
+        $mdFiles = @(Get-ChildItem -Path $productDir -Filter "*.md" -File -Recurse -ErrorAction SilentlyContinue)
 
         # Define priority order for product files
         $priorityOrder = [System.Collections.Generic.List[string]]@(
@@ -40,46 +104,58 @@ function Get-ProductList {
             'roadmap-overview'
         )
 
-        # Separate files into priority and non-priority
+        # Separate files into priority root docs, other root docs, and nested docs
         $priorityFiles = [System.Collections.ArrayList]@()
-        $otherFiles = [System.Collections.ArrayList]@()
+        $rootFiles = [System.Collections.ArrayList]@()
+        $nestedFiles = [System.Collections.ArrayList]@()
 
         foreach ($file in $mdFiles) {
             if ($null -eq $file) { continue }
-            $priorityIndex = $priorityOrder.IndexOf($file.BaseName)
+
+            $doc = Resolve-ProductDocumentInfo -File $file -ProductDir $productDir
+            $priorityIndex = if ($doc.Depth -eq 0) { $priorityOrder.IndexOf($file.BaseName) } else { -1 }
+
             if ($priorityIndex -ge 0) {
                 [void]$priorityFiles.Add([PSCustomObject]@{
-                    File = $file
+                    Doc = $doc
                     Priority = $priorityIndex
                 })
+            } elseif ($doc.Depth -eq 0) {
+                [void]$rootFiles.Add($doc)
             } else {
-                [void]$otherFiles.Add($file)
+                [void]$nestedFiles.Add($doc)
             }
         }
 
-        # Sort priority files by their priority index
         if ($priorityFiles.Count -gt 0) {
             $priorityFiles = @($priorityFiles | Sort-Object -Property Priority)
         }
-
-        # Sort other files alphabetically
-        if ($otherFiles.Count -gt 0) {
-            $otherFiles = @($otherFiles | Sort-Object -Property BaseName)
+        if ($rootFiles.Count -gt 0) {
+            $rootFiles = @($rootFiles | Sort-Object -Property Filename)
+        }
+        if ($nestedFiles.Count -gt 0) {
+            $nestedFiles = @($nestedFiles | Sort-Object -Property Filename)
         }
 
-        # Build final docs array: priority first, then alphabetical
         foreach ($pf in $priorityFiles) {
             if ($null -eq $pf) { continue }
             $docs += @{
-                name = $pf.File.BaseName
-                filename = $pf.File.Name
+                name = $pf.Doc.Name
+                filename = $pf.Doc.Filename
             }
         }
-        foreach ($file in $otherFiles) {
+        foreach ($file in $rootFiles) {
             if ($null -eq $file) { continue }
             $docs += @{
-                name = $file.BaseName
-                filename = $file.Name
+                name = $file.Name
+                filename = $file.Filename
+            }
+        }
+        foreach ($file in $nestedFiles) {
+            if ($null -eq $file) { continue }
+            $docs += @{
+                name = $file.Name
+                filename = $file.Filename
             }
         }
     }
@@ -93,13 +169,13 @@ function Get-ProductDocument {
     )
     $botRoot = $script:Config.BotRoot
     $productDir = Join-Path $botRoot "workspace\product"
-    $docPath = Join-Path $productDir "$Name.md"
+    $resolvedDoc = Resolve-ProductDocumentPath -Name $Name -ProductDir $productDir
 
-    if (Test-Path $docPath) {
-        $docContent = Get-Content -Path $docPath -Raw
+    if ($resolvedDoc -and (Test-Path $resolvedDoc.FullPath)) {
+        $docContent = Get-Content -Path $resolvedDoc.FullPath -Raw
         return @{
             success = $true
-            name = $Name
+            name = $resolvedDoc.Name
             content = $docContent
         }
     } else {
@@ -217,7 +293,8 @@ function Start-ProductKickstart {
         [Parameter(Mandatory)] [string]$UserPrompt,
         [array]$Files = @(),
         [bool]$NeedsInterview = $true,
-        [bool]$AutoWorkflow = $true
+        [bool]$AutoWorkflow = $true,
+        [string[]]$SkipPhases = @()
     )
     $botRoot = $script:Config.BotRoot
     $projectRoot = Split-Path -Parent $botRoot
@@ -271,9 +348,10 @@ function Start-ProductKickstart {
     $wrapperPath = Join-Path $launchersDir "kickstart-launcher.ps1"
     $interviewLine = if ($NeedsInterview) { " -NeedsInterview" } else { "" }
     $autoWorkflowLine = if ($AutoWorkflow) { " -AutoWorkflow" } else { "" }
+    $skipLine = if ($SkipPhases.Count -gt 0) { " -SkipPhases '$($SkipPhases -join ',')'" } else { "" }
     @"
 `$prompt = Get-Content -LiteralPath '$promptFile' -Raw
-& '$launcherPath' -Type kickstart -Prompt `$prompt -Description 'Kickstart: project setup'$interviewLine$autoWorkflowLine
+& '$launcherPath' -Type kickstart -Prompt `$prompt -Description 'Kickstart: project setup'$interviewLine$autoWorkflowLine$skipLine
 "@ | Set-Content -Path $wrapperPath -Encoding UTF8
 
     $proc = Start-Process pwsh -ArgumentList "-NoProfile", "-File", $wrapperPath -WindowStyle Normal -PassThru
@@ -671,3 +749,4 @@ Export-ModuleMember -Function @(
     'Get-KickstartStatus',
     'Resume-ProductKickstart'
 )
+

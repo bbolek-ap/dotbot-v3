@@ -1,4 +1,5 @@
 {
+  "instance_id": null,
   "profile": "dotnet",
   "provider": "claude",
   "mcp_enabled": true,

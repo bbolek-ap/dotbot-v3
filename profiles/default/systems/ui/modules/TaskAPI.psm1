@@ -4,7 +4,7 @@ Task management API module
 
 .DESCRIPTION
 Provides task plan viewing, action-required listing, question answering,
-split approval, and task creation via Claude CLI.
+split approval, task creation, and audited roadmap task mutations.
 Extracted from server.ps1 for modularity.
 #>
 
@@ -25,6 +25,226 @@ function Initialize-TaskAPI {
     # (dot-sourcing inside a function scopes the definitions to that function only)
     $script:TaskAnswerQuestionScript = "$BotRoot\systems\mcp\tools\task-answer-question\script.ps1"
     $script:TaskApproveSplitScript = "$BotRoot\systems\mcp\tools\task-approve-split\script.ps1"
+    $script:TaskMutationModulePath = "$BotRoot\systems\mcp\modules\TaskMutation.psm1"
+}
+
+function Get-TasksBaseDir {
+    return (Join-Path $script:Config.BotRoot "workspace\tasks")
+}
+
+function Import-TaskMutationModule {
+    if (-not (Test-Path $script:TaskMutationModulePath)) {
+        throw "TaskMutation module was not found: $($script:TaskMutationModulePath)"
+    }
+
+    if (-not (Get-Command Set-TaskIgnoreState -ErrorAction SilentlyContinue)) {
+        Import-Module $script:TaskMutationModulePath -Global -Force | Out-Null
+    }
+}
+
+function Get-TaskMutationActor {
+    param(
+        [string]$Actor
+    )
+
+    if ($Actor) {
+        return $Actor
+    }
+
+    $settingsPath = Join-Path $script:Config.BotRoot "defaults\settings.default.json"
+    if (Test-Path $settingsPath) {
+        try {
+            $settings = Get-Content -Path $settingsPath -Raw | ConvertFrom-Json
+            if ($settings.profile) {
+                return "ui:$($settings.profile)"
+            }
+        } catch {
+            # Fall through to environment defaults
+        }
+    }
+
+    if ($env:USERNAME) {
+        return "ui:$($env:USERNAME)"
+    }
+
+    return "ui"
+}
+
+function Test-IsTaskApiObjectRecord {
+    param(
+        [object]$Value
+    )
+
+    if ($null -eq $Value) {
+        return $false
+    }
+
+    if ($Value -is [System.Collections.IDictionary]) {
+        return $true
+    }
+
+    if ($Value -is [string] -or $Value -is [char] -or $Value -is [ValueType]) {
+        return $false
+    }
+
+    return ($Value.GetType().Name -eq 'PSCustomObject')
+}
+
+function ConvertTo-TaskApiHashtable {
+    param(
+        [Parameter(Mandatory)]
+        [object]$InputObject
+    )
+
+    if ($null -eq $InputObject) {
+        return @{}
+    }
+
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        $hash = @{}
+        foreach ($key in $InputObject.Keys) {
+            $hash[$key] = ConvertTo-TaskApiValue -Value $InputObject[$key]
+        }
+        return $hash
+    }
+
+    if (Test-IsTaskApiObjectRecord -Value $InputObject) {
+        $hash = @{}
+        foreach ($property in $InputObject.PSObject.Properties) {
+            $hash[$property.Name] = ConvertTo-TaskApiValue -Value $property.Value
+        }
+        return $hash
+    }
+
+    throw "Updates must be a JSON object"
+}
+
+function ConvertTo-TaskApiValue {
+    param(
+        [object]$Value
+    )
+
+    if ($null -eq $Value) {
+        return $null
+    }
+
+    if ($Value -is [string] -or $Value -is [char] -or $Value -is [ValueType]) {
+        return $Value
+    }
+
+    if ($Value -is [System.Collections.IDictionary]) {
+        return ConvertTo-TaskApiHashtable -InputObject $Value
+    }
+
+    if (Test-IsTaskApiObjectRecord -Value $Value) {
+        return ConvertTo-TaskApiHashtable -InputObject $Value
+    }
+
+    if ($Value -is [System.Collections.IEnumerable]) {
+        return @($Value | ForEach-Object { ConvertTo-TaskApiValue -Value $_ })
+    }
+
+    return $Value
+}
+
+function Get-TodoTaskRecord {
+    param(
+        [Parameter(Mandatory)] [string]$TaskId
+    )
+
+    $todoDir = Join-Path (Get-TasksBaseDir) "todo"
+    if (-not (Test-Path $todoDir)) {
+        return $null
+    }
+
+    foreach ($file in @(Get-ChildItem -Path $todoDir -Filter "*.json" -File -ErrorAction SilentlyContinue)) {
+        try {
+            $task = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
+            if ($task.id -eq $TaskId) {
+                return @{
+                    task = $task
+                    path = $file.FullName
+                    name = $file.Name
+                }
+            }
+        } catch {
+            # Ignore malformed files while scanning
+        }
+    }
+
+    return $null
+}
+
+function Get-DeletedArchiveVersions {
+    param(
+        [string]$TaskId
+    )
+
+    $deletedDir = Join-Path (Join-Path (Get-TasksBaseDir) "todo") "deleted_tasks"
+    if (-not (Test-Path $deletedDir)) {
+        return @()
+    }
+
+    $versions = @()
+    foreach ($file in @(Get-ChildItem -Path $deletedDir -Filter "*.json" -File -ErrorAction SilentlyContinue)) {
+        try {
+            $archive = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
+            if (-not $TaskId -or $archive.task_id -eq $TaskId) {
+                $versions += $archive
+            }
+        } catch {
+            # Ignore malformed archive files while scanning
+        }
+    }
+
+    return @(
+        $versions |
+            Sort-Object {
+                try {
+                    if ($_.captured_at) { [DateTime]$_.captured_at } else { [DateTime]::MinValue }
+                } catch {
+                    [DateTime]::MinValue
+                }
+            } -Descending
+    )
+}
+
+function Get-ActiveTodoTaskIds {
+    $taskIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $todoDir = Join-Path (Get-TasksBaseDir) "todo"
+    if (-not (Test-Path $todoDir)) {
+        return $taskIds
+    }
+
+    foreach ($file in @(Get-ChildItem -Path $todoDir -Filter "*.json" -File -ErrorAction SilentlyContinue)) {
+        try {
+            $task = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
+            if ($task.id) {
+                $taskIds.Add([string]$task.id) | Out-Null
+            }
+        } catch {
+            # Ignore malformed task files while scanning
+        }
+    }
+
+    return $taskIds
+}
+
+function Add-DeletedArchiveRestoreState {
+    param(
+        [Parameter(Mandatory)] [object]$Version,
+        [Parameter(Mandatory)] [object]$ActiveTaskIds
+    )
+
+    $annotated = [ordered]@{}
+    foreach ($property in $Version.PSObject.Properties) {
+        $annotated[$property.Name] = $property.Value
+    }
+
+    $taskId = if ($Version.task_id) { [string]$Version.task_id } else { $null }
+    $annotated.is_restored = ($taskId -and $ActiveTaskIds.Contains($taskId))
+
+    return [pscustomobject]$annotated
 }
 
 function Get-TaskPlan {
@@ -243,11 +463,107 @@ Now create the task using mcp__dotbot__task_create with needs_interview=$NeedsIn
     }
 }
 
+function Set-RoadmapTaskIgnore {
+    param(
+        [Parameter(Mandatory)] [string]$TaskId,
+        [Parameter(Mandatory)] [bool]$Ignored,
+        [string]$Actor
+    )
+
+    Import-TaskMutationModule
+    $actorName = Get-TaskMutationActor -Actor $Actor
+    $result = Set-TaskIgnoreState -TaskId $TaskId -Ignored $Ignored -Actor $actorName -TasksBaseDir (Get-TasksBaseDir)
+    return $result
+}
+
+function Update-RoadmapTask {
+    param(
+        [Parameter(Mandatory)] [string]$TaskId,
+        [Parameter(Mandatory)] [object]$Updates,
+        [string]$Actor
+    )
+
+    Import-TaskMutationModule
+    $actorName = Get-TaskMutationActor -Actor $Actor
+    $updateHash = ConvertTo-TaskApiHashtable -InputObject $Updates
+    return Update-TaskContent -TaskId $TaskId -Updates $updateHash -Actor $actorName -TasksBaseDir (Get-TasksBaseDir)
+}
+
+function Delete-RoadmapTask {
+    param(
+        [Parameter(Mandatory)] [string]$TaskId,
+        [string]$Actor
+    )
+
+    Import-TaskMutationModule
+    $actorName = Get-TaskMutationActor -Actor $Actor
+    return Remove-TaskFromTodo -TaskId $TaskId -Actor $actorName -TasksBaseDir (Get-TasksBaseDir)
+}
+
+function Get-RoadmapTaskHistory {
+    param(
+        [Parameter(Mandatory)] [string]$TaskId
+    )
+
+    Import-TaskMutationModule
+    $history = Get-TaskVersionHistory -TaskId $TaskId -TasksBaseDir (Get-TasksBaseDir)
+
+    return @{
+        success = $true
+        task_id = $TaskId
+        edited_versions = @($history.edited_versions)
+        deleted_versions = @($history.deleted_versions)
+    }
+}
+
+function Get-DeletedRoadmapTasks {
+    $activeTodoTaskIds = Get-ActiveTodoTaskIds
+    $allDeletedVersions = @(
+        Get-DeletedArchiveVersions | ForEach-Object {
+            Add-DeletedArchiveRestoreState -Version $_ -ActiveTaskIds $activeTodoTaskIds
+        }
+    )
+    $latestDeletedTasks = @(
+        $allDeletedVersions |
+            Group-Object -Property task_id |
+            ForEach-Object {
+                $_.Group | Sort-Object { try { if ($_.captured_at) { [DateTime]$_.captured_at } else { [DateTime]::MinValue } } catch { [DateTime]::MinValue } } -Descending | Select-Object -First 1
+            } |
+            Sort-Object { try { if ($_.captured_at) { [DateTime]$_.captured_at } else { [DateTime]::MinValue } } catch { [DateTime]::MinValue } } -Descending
+    )
+
+    return @{
+        success = $true
+        deleted_versions = $allDeletedVersions
+        latest_deleted_tasks = $latestDeletedTasks
+        count = $allDeletedVersions.Count
+        latest_count = $latestDeletedTasks.Count
+    }
+}
+
+function Restore-RoadmapTaskVersion {
+    param(
+        [Parameter(Mandatory)] [string]$TaskId,
+        [Parameter(Mandatory)] [string]$VersionId,
+        [string]$Actor
+    )
+
+    Import-TaskMutationModule
+    $actorName = Get-TaskMutationActor -Actor $Actor
+    return Restore-TaskVersion -TaskId $TaskId -VersionId $VersionId -Actor $actorName -TasksBaseDir (Get-TasksBaseDir)
+}
+
 Export-ModuleMember -Function @(
     'Initialize-TaskAPI',
     'Get-TaskPlan',
     'Get-ActionRequired',
     'Submit-TaskAnswer',
     'Submit-SplitApproval',
-    'Start-TaskCreation'
+    'Start-TaskCreation',
+    'Set-RoadmapTaskIgnore',
+    'Update-RoadmapTask',
+    'Delete-RoadmapTask',
+    'Get-RoadmapTaskHistory',
+    'Get-DeletedRoadmapTasks',
+    'Restore-RoadmapTaskVersion'
 )

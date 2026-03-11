@@ -16,7 +16,7 @@
     Stacks may declare 'extends: <parent>' to auto-include a parent stack.
 
 .PARAMETER Profile
-    Profile(s) to install (e.g., 'dotnet', 'multi-repo,dotnet-blazor').
+    Profile(s) to install (e.g., 'dotnet', 'kickstart-via-jira,dotnet-blazor').
     Accepts a comma-separated string or multiple -Profile values.
 
 .PARAMETER Force
@@ -34,8 +34,8 @@
     Installs base default + dotnet stack.
 
 .EXAMPLE
-    init-project.ps1 -Profile multi-repo,dotnet-blazor,dotnet-ef
-    Installs default -> multi-repo (workflow) -> dotnet (auto) -> dotnet-blazor -> dotnet-ef.
+    init-project.ps1 -Profile kickstart-via-jira,dotnet-blazor,dotnet-ef
+    Installs default -> kickstart-via-jira (workflow) -> dotnet (auto) -> dotnet-blazor -> dotnet-ef.
 #>
 
 [CmdletBinding()]
@@ -178,7 +178,22 @@ if ($DryRun) {
 # ---------------------------------------------------------------------------
 # Handle existing .bot with -Force (preserve workspace data)
 # ---------------------------------------------------------------------------
+$existingInstanceId = $null
 if ((Test-Path $BotDir) -and $Force) {
+    # Preserve instance_id before replacing defaults/
+    $existingSettingsPath = Join-Path $BotDir "defaults\settings.default.json"
+    if (Test-Path $existingSettingsPath) {
+        try {
+            $existingSettings = Get-Content $existingSettingsPath -Raw | ConvertFrom-Json
+            if ($existingSettings.PSObject.Properties['instance_id'] -and $existingSettings.instance_id) {
+                $parsedGuid = [guid]::Empty
+                if ([guid]::TryParse("$($existingSettings.instance_id)", [ref]$parsedGuid)) {
+                    $existingInstanceId = $parsedGuid.ToString()
+                }
+            }
+        } catch {}
+    }
+
     Write-Status "Updating .bot system files (preserving workspace data)"
     # Remove only system/config directories and root files -- never workspace/ or .control/
     $systemDirs = @("systems", "prompts", "hooks", "defaults")
@@ -209,6 +224,8 @@ if (Test-Path $BotDir) {
 # Create empty workspace directories
 $workspaceDirs = @(
     "workspace\tasks\todo",
+    "workspace\tasks\todo\edited_tasks",
+    "workspace\tasks\todo\deleted_tasks",
     "workspace\tasks\analysing",
     "workspace\tasks\analysed",
     "workspace\tasks\needs-input",
@@ -246,15 +263,45 @@ Write-Success "Created .bot directory structure"
 # ---------------------------------------------------------------------------
 $ProfilesDir = Join-Path $DotbotBase "profiles"
 
+# Backward-compat aliases (deprecated names -> canonical profile names)
+$profileAliases = @{
+    "multi-repo" = "kickstart-via-jira"
+}
+
 # Normalise -Profile input: accept comma-separated strings and/or arrays
 $requestedProfiles = @()
+$aliasWarningsShown = @{}
 if ($Profile -and $Profile.Count -gt 0) {
     foreach ($entry in $Profile) {
         foreach ($token in ($entry -split ',')) {
             $trimmed = $token.Trim()
-            if ($trimmed) { $requestedProfiles += $trimmed }
+            if ($trimmed) {
+                $aliasKey = $trimmed.ToLowerInvariant()
+                if ($profileAliases.ContainsKey($aliasKey)) {
+                    $canonical = $profileAliases[$aliasKey]
+                    if (-not $aliasWarningsShown.ContainsKey($aliasKey)) {
+                        Write-DotbotWarning "Profile '$trimmed' is deprecated and will be removed in a future release. Use '$canonical' instead."
+                        $aliasWarningsShown[$aliasKey] = $true
+                    }
+                    $requestedProfiles += $canonical
+                } else {
+                    $requestedProfiles += $trimmed
+                }
+            }
         }
     }
+
+    # Deduplicate while preserving the first-seen order (case-insensitive)
+    $dedupedProfiles = @()
+    $seenRequestedProfiles = @{}
+    foreach ($name in $requestedProfiles) {
+        $key = $name.ToLowerInvariant()
+        if (-not $seenRequestedProfiles.ContainsKey($key)) {
+            $seenRequestedProfiles[$key] = $true
+            $dedupedProfiles += $name
+        }
+    }
+    $requestedProfiles = $dedupedProfiles
 }
 
 # --- Helper: parse a simple profile.yaml (no external YAML module needed) ---
@@ -407,23 +454,26 @@ $installedStacks = @()
 
 foreach ($profileName in $resolvedOrder) {
     $profileDir = Join-Path $ProfilesDir $profileName
+    $profileDirFull = [System.IO.Path]::GetFullPath($profileDir)
     $meta = $profileMeta[$profileName]
 
     Write-Status "Installing profile: $profileName ($($meta.type))"
 
     # Copy profile files (overlay on top of default)
     Get-ChildItem -Path $profileDir -Recurse -File | ForEach-Object {
-        $relativePath = $_.FullName.Substring($profileDir.Length + 1)
+        $sourceFileFull = [System.IO.Path]::GetFullPath($_.FullName)
+        $relativePath = [System.IO.Path]::GetRelativePath($profileDirFull, $sourceFileFull)
+        $relativePathKey = $relativePath -replace '\\', '/'
         $destPath = Join-Path $BotDir $relativePath
         $destDir = Split-Path $destPath -Parent
 
         # Skip profile metadata files (not copied to .bot/)
-        if ($relativePath -eq "profile-init.ps1") { return }
-        if ($relativePath -eq "profile.yaml") { return }
+        if ($relativePathKey -eq "profile-init.ps1") { return }
+        if ($relativePathKey -eq "profile.yaml") { return }
 
         # Handle config.json merging for hooks/verify
-        if ($relativePath -eq "hooks\verify\config.json") {
-            $baseConfigPath = Join-Path $BotDir "hooks\verify\config.json"
+        if ($relativePathKey -eq "hooks/verify/config.json") {
+            $baseConfigPath = [System.IO.Path]::Combine($BotDir, "hooks", "verify", "config.json")
             if (Test-Path $baseConfigPath) {
                 $baseConfig = Get-Content $baseConfigPath -Raw | ConvertFrom-Json
                 $profileConfig = Get-Content $_.FullName -Raw | ConvertFrom-Json
@@ -445,8 +495,8 @@ foreach ($profileName in $resolvedOrder) {
         }
 
         # Handle settings.default.json deep-merge
-        if ($relativePath -eq "defaults\settings.default.json") {
-            $baseSettingsPath = Join-Path $BotDir "defaults\settings.default.json"
+        if ($relativePathKey -eq "defaults/settings.default.json") {
+            $baseSettingsPath = [System.IO.Path]::Combine($BotDir, "defaults", "settings.default.json")
             if (Test-Path $baseSettingsPath) {
                 $baseSettings = Get-Content $baseSettingsPath -Raw | ConvertFrom-Json
                 $profileSettings = Get-Content $_.FullName -Raw | ConvertFrom-Json
@@ -515,6 +565,29 @@ if ($resolvedOrder.Count -gt 0) {
     }
 }
 
+# Ensure workspace instance GUID exists (preserve on -Force re-init)
+$workspaceSettingsPath = Join-Path $BotDir "defaults\settings.default.json"
+if (Test-Path $workspaceSettingsPath) {
+    try {
+        $settings = Get-Content $workspaceSettingsPath -Raw | ConvertFrom-Json
+        $currentInstanceId = if ($settings.PSObject.Properties['instance_id']) { "$($settings.instance_id)" } else { "" }
+        $parsedCurrentGuid = [guid]::Empty
+
+        if ([guid]::TryParse($currentInstanceId, [ref]$parsedCurrentGuid)) {
+            $finalInstanceId = $parsedCurrentGuid.ToString()
+        } elseif ($existingInstanceId) {
+            $finalInstanceId = $existingInstanceId
+        } else {
+            $finalInstanceId = [guid]::NewGuid().ToString()
+        }
+
+        $settings | Add-Member -NotePropertyName "instance_id" -NotePropertyValue $finalInstanceId -Force
+        $settings | ConvertTo-Json -Depth 10 | Set-Content $workspaceSettingsPath
+        Write-Success "Workspace instance: $($finalInstanceId.Substring(0,8))"
+    } catch {
+        Write-DotbotWarning "Failed to set workspace instance ID: $($_.Exception.Message)"
+    }
+}
 # Run .bot/init.ps1 to set up .claude integration
 $initScript = Join-Path $BotDir "init.ps1"
 if (Test-Path $initScript) {

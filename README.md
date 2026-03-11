@@ -22,7 +22,7 @@ dotbot wraps AI-assisted coding in a managed, transparent workflow where every s
 - **Zero-dependency tooling** — MCP server and web UI are pure PowerShell. No npm, pip, or Docker required.
 - **Designed for teams** — The entire `.bot/` directory lives in your repo. Task queues, session histories, plans, and feedback are visible to everyone through git.
 - **Fully extensible** — Hooks, verification scripts, agents, skills, and workflows can all be customised per-project.
-- **Profile system** — **Workflow** profiles (e.g. `multi-repo`) change how dotbot operates. **Stack** profiles (e.g. `dotnet`, `dotnet-blazor`) add tech-specific skills, hooks, and tools. Stacks can extend other stacks and compose additively.
+- **Profile system** — **Workflow** profiles (e.g. `kickstart-via-jira`) change how dotbot operates. **Stack** profiles (e.g. `dotnet`, `dotnet-blazor`) add tech-specific skills, hooks, and tools. Stacks can extend other stacks and compose additively.
 - **Security** — PathSanitizer strips absolute paths from AI output, privacy scan covers the full repo, and pre-commit hooks run gitleaks on staged files.
 
 ## Prerequisites
@@ -67,11 +67,11 @@ This creates a `.bot/` directory with the MCP server, web UI, autonomous runtime
 
 ```powershell
 dotbot init --profile dotnet                          # Single stack
-dotbot init --profile multi-repo,dotnet-blazor,dotnet-ef  # Workflow + stacks
+dotbot init --profile kickstart-via-jira,dotnet-blazor,dotnet-ef  # Workflow + stacks
 dotbot profiles                                       # List available profiles
 ```
 
-- **Workflow** (at most one) — Changes how dotbot operates. Example: `multi-repo` adds a research-driven multi-repo pipeline with Atlassian and Azure DevOps integration.
+- **Workflow** (at most one) — Changes how dotbot operates. Example: `kickstart-via-jira` adds a research-driven kickstart-via-jira pipeline with Atlassian and Azure DevOps integration.
 - **Stack** (composable) — Adds tech-specific skills, hooks, verify scripts, and MCP tools. Stacks can declare `extends` to auto-include a parent (e.g. `dotnet-blazor` extends `dotnet`).
 
 Apply order: `default` → workflow (if any) → stacks (dependency-resolved). Settings are deep-merged; files are overlaid.
@@ -113,7 +113,7 @@ dotbot help          # Show all commands
 dotbot init          # Add dotbot to current project
 dotbot init -Force   # Reinitialize (preserves workspace data)
 dotbot init --profile dotnet                          # With a stack profile
-dotbot init --profile multi-repo,dotnet-blazor        # Workflow + stacks
+dotbot init --profile kickstart-via-jira,dotnet-blazor        # Workflow + stacks
 dotbot profiles      # List available profiles
 dotbot status        # Check installation status
 dotbot update        # Update global installation
@@ -161,7 +161,7 @@ The dotbot MCP server exposes 26 tools, auto-discovered from `systems/mcp/tools/
 
 **Development**: `dev_start`, `dev_stop`
 
-Stack and workflow profiles can add their own tools (e.g. `multi-repo` adds `repo_clone`, `repo_list`, `atlassian_download`, `research_status`).
+Stack and workflow profiles can add their own tools (e.g. `kickstart-via-jira` adds `repo_clone`, `repo_list`, `atlassian_download`, `research_status`).
 
 See `.bot/README.md` for full tool documentation.
 

@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initSteeringPanel();
     initSettingsToggles();
     initTaskClicks();
+    initRoadmapTaskActions();
     initSidebarItemClicks();
     await initProductNav();
     initModalClose();
@@ -63,3 +64,4 @@ window.addEventListener('beforeunload', () => {
     if (kickstartPolling) clearInterval(kickstartPolling);
     if (processPollingTimer) clearInterval(processPollingTimer);
 });
+

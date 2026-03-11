@@ -2052,3 +2052,9 @@
     color: var(--color-error);
     text-shadow: 0 0 12px var(--error-glow);
 }
+
+/* ========== KICKSTART PHASE LIST ========== */
+.kickstart-phase-list { margin-top: 12px; }
+.phase-item { padding: 2px 0; font-size: 0.85em; }
+.phase-fixed { opacity: 0.7; padding-left: 4px; }
+.phase-bullet { margin-right: 6px; opacity: 0.5; }

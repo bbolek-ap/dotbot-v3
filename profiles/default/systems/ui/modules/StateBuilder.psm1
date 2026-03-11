@@ -26,6 +26,71 @@ function Initialize-StateBuilder {
     $script:Config.ProcessesDir = $ProcessesDir
 }
 
+function Get-RoadmapOverviewDependencyMap {
+    param(
+        [Parameter(Mandatory)]
+        [string]$BotRoot
+    )
+
+    $overviewPath = Join-Path $BotRoot "workspace\product\roadmap-overview.md"
+    $dependencyMap = @{}
+    if (-not (Test-Path $overviewPath)) {
+        return $dependencyMap
+    }
+
+    foreach ($line in @(Get-Content -Path $overviewPath -ErrorAction SilentlyContinue)) {
+        if ($line -notmatch '^\|\s*\d+\s*\|') {
+            continue
+        }
+
+        $cells = ($line.Trim().Trim('|') -split '\s*\|\s*')
+        if ($cells.Count -lt 5) {
+            continue
+        }
+
+        $methodologyMatch = [regex]::Match($cells[2], '`([^`]+)`')
+        if (-not $methodologyMatch.Success) {
+            continue
+        }
+
+        $methodologyKey = $methodologyMatch.Groups[1].Value.Trim().ToLower()
+        if (-not $methodologyKey) {
+            continue
+        }
+
+        $dependencyText = $cells[3].Trim()
+        if (-not $dependencyText -or $dependencyText -match '^(none|n/a)$') {
+            $dependencyMap[$methodologyKey] = @()
+            continue
+        }
+
+        $dependencyMap[$methodologyKey] = @($dependencyText)
+    }
+
+    return $dependencyMap
+}
+
+function Get-RoadmapTaskDependencies {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Task,
+        [Parameter(Mandatory)]
+        [hashtable]$DependencyMap
+    )
+
+    $explicitDependencies = @(@($Task.dependencies) | Where-Object { $null -ne $_ -and "$($_)".Trim() })
+    if ($explicitDependencies.Count -gt 0) {
+        return $explicitDependencies
+    }
+
+    $researchPrompt = "$($Task.research_prompt)".Trim().ToLower()
+    if ($researchPrompt -and $DependencyMap.ContainsKey($researchPrompt)) {
+        return @($DependencyMap[$researchPrompt])
+    }
+
+    return @()
+}
+
 function Get-BotState {
     param(
         [DateTime]$IfModifiedSince = [DateTime]::MinValue
@@ -58,6 +123,7 @@ function Get-BotState {
 
     # Build fresh state
     $tasksDir = Join-Path $botRoot "workspace\tasks"
+    $roadmapDependencyMap = Get-RoadmapOverviewDependencyMap -BotRoot $botRoot
 
     # Count tasks (including new analysis statuses)
     $todoTasks = @(Get-ChildItem -Path (Join-Path $tasksDir "todo") -Filter "*.json" -ErrorAction SilentlyContinue)
@@ -122,6 +188,7 @@ function Get-BotState {
                         plan_path = $taskContent.plan_path
                         created_at = $taskContent.created_at
                         updated_at = $taskContent.updated_at
+                        ignore = $taskContent.ignore
                         started_at = $taskContent.started_at
                         completed_at = $taskContent.completed_at
                         commit_sha = $taskContent.commit_sha
@@ -241,7 +308,7 @@ function Get-BotState {
                     }
                 } catch { $null }
             } | Where-Object { $_ -ne $null } |
-            Sort-Object priority_num |
+            Sort-Object priority_num, name, id |
             ForEach-Object {
                 @{
                     id = $_.id
@@ -274,11 +341,14 @@ function Get-BotState {
                         acceptance_criteria = $taskContent.acceptance_criteria
                         steps = $taskContent.steps
                         dependencies = $taskContent.dependencies
+                        research_prompt = $taskContent.research_prompt
+                        roadmap_dependencies = Get-RoadmapTaskDependencies -Task $taskContent -DependencyMap $roadmapDependencyMap
                         applicable_agents = $taskContent.applicable_agents
                         applicable_standards = $taskContent.applicable_standards
                         plan_path = $taskContent.plan_path
                         created_at = $taskContent.created_at
                         updated_at = $taskContent.updated_at
+                        ignore = $taskContent.ignore
                         priority_num = [int]$taskContent.priority
                     }
                 } catch {
@@ -286,7 +356,7 @@ function Get-BotState {
                 }
             } |
             Where-Object { $_ -ne $null } |
-            Sort-Object priority_num |
+            Sort-Object priority_num, name, id |
             Select-Object -First 100 |
             ForEach-Object {
                 @{
@@ -300,11 +370,14 @@ function Get-BotState {
                     acceptance_criteria = $_.acceptance_criteria
                     steps = $_.steps
                     dependencies = $_.dependencies
+                    research_prompt = $_.research_prompt
+                    roadmap_dependencies = $_.roadmap_dependencies
                     applicable_agents = $_.applicable_agents
                     applicable_standards = $_.applicable_standards
                     plan_path = $_.plan_path
                     created_at = $_.created_at
                     updated_at = $_.updated_at
+                    ignore = $_.ignore
                 }
             }
     }
@@ -477,6 +550,18 @@ function Get-BotState {
         }
     }
 
+
+    # Read workspace instance ID from settings.default.json
+    $workspaceInstanceId = $null
+    $settingsPath = Join-Path $botRoot "defaults\settings.default.json"
+    if (Test-Path $settingsPath) {
+        try {
+            $settingsJson = Get-Content $settingsPath -Raw | ConvertFrom-Json
+            if ($settingsJson.PSObject.Properties['instance_id'] -and $settingsJson.instance_id) {
+                $workspaceInstanceId = "$($settingsJson.instance_id)"
+            }
+        } catch { }
+    }
     # Get steering status (for operator whisper channel) - legacy support
     $steeringStatus = $null
     $steeringStatusFile = Join-Path $controlDir "steering-status.json"
@@ -490,6 +575,7 @@ function Get-BotState {
 
     $state = @{
         timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        instance_id = $workspaceInstanceId
         tasks = @{
             todo = $todoTasks.Count
             analysing = $analysingTasks.Count
@@ -526,7 +612,7 @@ function Get-BotState {
         }
         instances = $instances
         steering = $steeringStatus
-        product_docs = @(Get-ChildItem -Path (Join-Path $botRoot "workspace\product") -Filter "*.md" -ErrorAction SilentlyContinue).Count
+        product_docs = @(Get-ChildItem -Path (Join-Path $botRoot "workspace\product") -Filter "*.md" -File -Recurse -ErrorAction SilentlyContinue).Count
     }
 
     # Cache the result

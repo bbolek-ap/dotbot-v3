@@ -77,6 +77,117 @@ if (-not (Test-Path $botDir)) {
 }
 
 # ═══════════════════════════════════════════════════════════════════
+# WORKSPACE INSTANCE ID
+# ═══════════════════════════════════════════════════════════════════
+
+Write-Host "  WORKSPACE INSTANCE ID" -ForegroundColor Cyan
+Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+$settingsPath = Join-Path $botDir "defaults\settings.default.json"
+Assert-PathExists -Name "settings.default.json exists" -Path $settingsPath
+if (Test-Path $settingsPath) {
+    $settingsJson = Get-Content $settingsPath -Raw | ConvertFrom-Json
+    $parsedGuid = [guid]::Empty
+    $hasInitGuid = $settingsJson.PSObject.Properties['instance_id'] -and [guid]::TryParse("$($settingsJson.instance_id)", [ref]$parsedGuid)
+    Assert-True -Name "settings.instance_id is valid after init" `
+        -Condition $hasInitGuid `
+        -Message "Expected a valid GUID in settings.instance_id"
+}
+
+$instanceIdModule = Join-Path $botDir "systems\runtime\modules\InstanceId.psm1"
+if (Test-Path $instanceIdModule) {
+    Import-Module $instanceIdModule -Force
+
+    # Simulate legacy project: remove instance_id then ensure it is recreated and persisted
+    $legacySettings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+    [void]$legacySettings.PSObject.Properties.Remove('instance_id')
+    $legacySettings | ConvertTo-Json -Depth 10 | Set-Content -Path $settingsPath
+
+    $generatedInstanceId = Get-OrCreateWorkspaceInstanceId -SettingsPath $settingsPath
+    $generatedGuid = [guid]::Empty
+    Assert-True -Name "legacy settings missing instance_id gets backfilled" `
+        -Condition ([guid]::TryParse("$generatedInstanceId", [ref]$generatedGuid)) `
+        -Message "Expected Get-OrCreateWorkspaceInstanceId to create a valid GUID"
+
+    $settingsAfterBackfill = Get-Content $settingsPath -Raw | ConvertFrom-Json
+    Assert-Equal -Name "backfilled instance_id is persisted to settings" `
+        -Expected "$generatedGuid" `
+        -Actual "$($settingsAfterBackfill.instance_id)"
+
+    $sameInstanceId = Get-OrCreateWorkspaceInstanceId -SettingsPath $settingsPath
+    Assert-Equal -Name "Get-OrCreateWorkspaceInstanceId is stable when already set" `
+        -Expected "$generatedGuid" `
+        -Actual "$sameInstanceId"
+} else {
+    Write-TestResult -Name "InstanceId module exists" -Status Fail -Message "Module not found at $instanceIdModule"
+}
+
+$promptBuilderScript = Join-Path $botDir "systems\runtime\modules\prompt-builder.ps1"
+if (Test-Path $promptBuilderScript) {
+    . $promptBuilderScript
+    $promptTask = [PSCustomObject]@{
+        id = "7b012fb8-d6fa-45e8-b89e-062b4bcb16ae"
+        name = "Prompt Builder Test"
+        category = "feature"
+        priority = 10
+        description = "Validate short ID interpolation"
+        applicable_standards = @()
+        applicable_agents = @()
+        acceptance_criteria = @()
+        steps = @()
+        questions_resolved = @()
+    }
+
+    $promptTemplate = "[task:{{TASK_ID_SHORT}}] [bot:{{INSTANCE_ID_SHORT}}] [bot-full:{{INSTANCE_ID}}]"
+    $promptResult = Build-TaskPrompt -PromptTemplate $promptTemplate -Task $promptTask -SessionId "sess-1" -InstanceId "A1B2C3D4-1111-2222-3333-444455556666"
+
+    Assert-True -Name "Build-TaskPrompt replaces TASK_ID_SHORT" `
+        -Condition ($promptResult -match '\[task:7b012fb8\]') `
+        -Message "Expected [task:7b012fb8] in prompt output"
+    Assert-True -Name "Build-TaskPrompt replaces INSTANCE_ID_SHORT" `
+        -Condition ($promptResult -match '\[bot:a1b2c3d4\]') `
+        -Message "Expected [bot:a1b2c3d4] in prompt output"
+    Assert-True -Name "Build-TaskPrompt keeps full INSTANCE_ID available" `
+        -Condition ($promptResult -match '\[bot-full:A1B2C3D4-1111-2222-3333-444455556666\]') `
+        -Message "Expected full INSTANCE_ID replacement"
+} else {
+    Write-TestResult -Name "prompt-builder script exists" -Status Fail -Message "Script not found at $promptBuilderScript"
+}
+
+$extractCommitInfoScript = Join-Path $botDir "systems\mcp\modules\Extract-CommitInfo.ps1"
+if (Test-Path $extractCommitInfoScript) {
+    . $extractCommitInfoScript
+
+    $parserTaskShort = "feedc0de"
+    Push-Location $testProject
+    try {
+        "short" | Set-Content -Path (Join-Path $testProject "parser-short.txt")
+        & git add parser-short.txt 2>&1 | Out-Null
+        & git commit -m "Parser short tag test" -m "[task:$parserTaskShort]" -m "[bot:a1b2c3d4]" --quiet 2>&1 | Out-Null
+
+        "full" | Set-Content -Path (Join-Path $testProject "parser-full.txt")
+        & git add parser-full.txt 2>&1 | Out-Null
+        & git commit -m "Parser full tag test" -m "[task:$parserTaskShort]" -m "[bot:a1b2c3d4-1111-2222-3333-444455556666]" --quiet 2>&1 | Out-Null
+    } finally {
+        Pop-Location
+    }
+
+    $commitInfo = Get-TaskCommitInfo -TaskId $parserTaskShort -ProjectRoot $testProject -MaxCommits 20
+    $shortTagCommit = @($commitInfo | Where-Object { $_.commit_subject -eq "Parser short tag test" }) | Select-Object -First 1
+    $fullTagCommit = @($commitInfo | Where-Object { $_.commit_subject -eq "Parser full tag test" }) | Select-Object -First 1
+
+    Assert-True -Name "Get-TaskCommitInfo finds short [bot:XXXXXXXX] tags" `
+        -Condition ($null -ne $shortTagCommit -and $shortTagCommit.workspace_short_id -eq "a1b2c3d4") `
+        -Message "Expected workspace_short_id a1b2c3d4 from short bot tag"
+    Assert-True -Name "Get-TaskCommitInfo derives short ID from full bot GUID tag" `
+        -Condition ($null -ne $fullTagCommit -and $fullTagCommit.workspace_short_id -eq "a1b2c3d4") `
+        -Message "Expected workspace_short_id a1b2c3d4 from full GUID bot tag"
+} else {
+    Write-TestResult -Name "Extract-CommitInfo module exists" -Status Fail -Message "Module not found at $extractCommitInfoScript"
+}
+
+Write-Host ""
+
 # MCP SERVER BOOT
 # ═══════════════════════════════════════════════════════════════════
 
@@ -513,6 +624,11 @@ if (Test-Path $notifModule) {
         -Condition ($settings.poll_interval_seconds -eq 30) `
         -Message "Expected 30, got $($settings.poll_interval_seconds)"
 
+
+    $parsedNotifGuid = [guid]::Empty
+    Assert-True -Name "Get-NotificationSettings includes workspace instance_id" `
+        -Condition ([guid]::TryParse("$($settings.instance_id)", [ref]$parsedNotifGuid)) `
+        -Message "Expected settings.instance_id to be a valid GUID"
     # Test Test-NotificationServer returns false when no server configured
     $reachable = Test-NotificationServer -Settings $settings
     Assert-True -Name "Test-NotificationServer returns false when no URL" `
@@ -585,21 +701,21 @@ if (Test-Path $pollerModule) {
 Write-Host ""
 
 # ═══════════════════════════════════════════════════════════════════
-# MULTI-REPO PROFILE: TOOL REGISTRATION & CATEGORIES
+# kickstart-via-jira PROFILE: TOOL REGISTRATION & CATEGORIES
 # ═══════════════════════════════════════════════════════════════════
 
-Write-Host "  MULTI-REPO TOOL REGISTRATION" -ForegroundColor Cyan
+Write-Host "  kickstart-via-jira TOOL REGISTRATION" -ForegroundColor Cyan
 Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
 
-$multiRepoProfile = Join-Path $dotbotDir "profiles\multi-repo"
-if (Test-Path $multiRepoProfile) {
+$kickstartViaJiraProfile = Join-Path $dotbotDir "profiles\kickstart-via-jira"
+if (Test-Path $kickstartViaJiraProfile) {
     $mrTestProject = New-TestProject
     $mrBotDir = Join-Path $mrTestProject ".bot"
 
     Push-Location $mrTestProject
-    & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dotbotDir "scripts\init-project.ps1") -Profile multi-repo 2>&1 | Out-Null
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dotbotDir "scripts\init-project.ps1") -Profile kickstart-via-jira 2>&1 | Out-Null
     & git add -A 2>&1 | Out-Null
-    & git commit -m "dotbot init multi-repo" --quiet 2>&1 | Out-Null
+    & git commit -m "dotbot init kickstart-via-jira" --quiet 2>&1 | Out-Null
     Pop-Location
 
     # Strip verify config to only include scripts that actually exist in the test project
@@ -622,12 +738,12 @@ if (Test-Path $multiRepoProfile) {
 
     try {
         $mrMcpProcess = Start-McpServer -BotDir $mrBotDir
-        Assert-True -Name "Multi-repo MCP server starts" `
+        Assert-True -Name "kickstart-via-jira MCP server starts" `
             -Condition (-not $mrMcpProcess.HasExited) `
             -Message "Server process exited immediately"
 
         $mrInitResponse = Send-McpInitialize -Process $mrMcpProcess
-        Assert-True -Name "Multi-repo MCP initialize responds" `
+        Assert-True -Name "kickstart-via-jira MCP initialize responds" `
             -Condition ($null -ne $mrInitResponse) `
             -Message "No response"
 
@@ -640,7 +756,7 @@ if (Test-Path $multiRepoProfile) {
             params  = @{}
         }
 
-        Assert-True -Name "Multi-repo tools/list responds" `
+        Assert-True -Name "kickstart-via-jira tools/list responds" `
             -Condition ($null -ne $mrListResponse) `
             -Message "No response"
 
@@ -649,7 +765,7 @@ if (Test-Path $multiRepoProfile) {
 
             # Check the 3 new tools are registered
             foreach ($toolName in @('repo_clone', 'repo_list', 'research_status')) {
-                Assert-True -Name "Multi-repo tool '$toolName' registered" `
+                Assert-True -Name "kickstart-via-jira tool '$toolName' registered" `
                     -Condition ($toolName -in $mrToolNames) `
                     -Message "Tool not found in tools/list"
             }
@@ -657,17 +773,17 @@ if (Test-Path $multiRepoProfile) {
             # Check inputSchema is present for each new tool
             foreach ($toolName in @('repo_clone', 'repo_list', 'research_status')) {
                 $toolDef = $mrListResponse.result.tools | Where-Object { $_.name -eq $toolName }
-                Assert-True -Name "Multi-repo tool '$toolName' has inputSchema" `
+                Assert-True -Name "kickstart-via-jira tool '$toolName' has inputSchema" `
                     -Condition ($null -ne $toolDef.inputSchema) `
                     -Message "inputSchema missing"
             }
         }
 
         Write-Host ""
-        Write-Host "  MULTI-REPO CATEGORIES" -ForegroundColor Cyan
+        Write-Host "  kickstart-via-jira CATEGORIES" -ForegroundColor Cyan
         Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
 
-        # Test task_create with multi-repo category "research"
+        # Test task_create with kickstart-via-jira category "research"
         $mrRequestId++
         $researchResponse = Send-McpRequest -Process $mrMcpProcess -Request @{
             jsonrpc = '2.0'
@@ -697,7 +813,7 @@ if (Test-Path $multiRepoProfile) {
                 -Message "Error or no response: $($researchResponse | ConvertTo-Json -Compress -Depth 3)"
         }
 
-        # Test task_create with multi-repo category "analysis"
+        # Test task_create with kickstart-via-jira category "analysis"
         $mrRequestId++
         $analysisResponse = Send-McpRequest -Process $mrMcpProcess -Request @{
             jsonrpc = '2.0'
@@ -767,7 +883,7 @@ if (Test-Path $multiRepoProfile) {
         }
 
     } catch {
-        Write-TestResult -Name "Multi-repo MCP tests" -Status Fail -Message "Exception: $($_.Exception.Message)"
+        Write-TestResult -Name "kickstart-via-jira MCP tests" -Status Fail -Message "Exception: $($_.Exception.Message)"
     } finally {
         if ($mrMcpProcess) {
             Stop-McpServer -Process $mrMcpProcess
@@ -775,11 +891,463 @@ if (Test-Path $multiRepoProfile) {
         Remove-TestProject -Path $mrTestProject
     }
 } else {
-    Write-TestResult -Name "Multi-repo tool registration" -Status Skip -Message "multi-repo profile not found"
+    Write-TestResult -Name "kickstart-via-jira tool registration" -Status Skip -Message "kickstart-via-jira profile not found"
 }
 
 Write-Host ""
 
+# ═══════════════════════════════════════════════════════════════════
+# kickstart-via-pr PROFILE: TOOL REGISTRATION & DIRECT TOOL TESTS
+# ═══════════════════════════════════════════════════════════════════
+
+Write-Host "  kickstart-via-pr TOOL REGISTRATION" -ForegroundColor Cyan
+Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+$kickstartViaPrProfile = Join-Path $dotbotDir "profiles\kickstart-via-pr"
+Assert-PathExists -Name "kickstart-via-pr profile source exists" -Path $kickstartViaPrProfile
+if (Test-Path $kickstartViaPrProfile) {
+    $prTestProject = New-TestProject
+    $prBotDir = Join-Path $prTestProject ".bot"
+
+    Push-Location $prTestProject
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dotbotDir "scripts\init-project.ps1") -Profile kickstart-via-pr 2>&1 | Out-Null
+    & git add -A 2>&1 | Out-Null
+    & git commit -m "dotbot init kickstart-via-pr" --quiet 2>&1 | Out-Null
+    Pop-Location
+
+    $prVerifyConfig = Join-Path $prBotDir "hooks\verify\config.json"
+    if (Test-Path $prVerifyConfig) {
+        try {
+            $vc = Get-Content $prVerifyConfig -Raw | ConvertFrom-Json
+            $vd = Join-Path $prBotDir "hooks\verify"
+            $existing = @()
+            foreach ($s in $vc.scripts) {
+                if (Test-Path (Join-Path $vd $s)) { $existing += $s }
+            }
+            $vc.scripts = $existing
+            $vc | ConvertTo-Json -Depth 5 | Set-Content -Path $prVerifyConfig -Encoding UTF8
+        } catch {}
+    }
+
+    $prMcpProcess = $null
+    $prRequestId = 0
+
+    try {
+        $prMcpProcess = Start-McpServer -BotDir $prBotDir
+        Assert-True -Name "kickstart-via-pr MCP server starts" `
+            -Condition (-not $prMcpProcess.HasExited) `
+            -Message "Server process exited immediately"
+
+        $prInitResponse = Send-McpInitialize -Process $prMcpProcess
+        Assert-True -Name "kickstart-via-pr MCP initialize responds" `
+            -Condition ($null -ne $prInitResponse) `
+            -Message "No response"
+
+        $prRequestId++
+        $prListResponse = Send-McpRequest -Process $prMcpProcess -Request @{
+            jsonrpc = '2.0'
+            id      = $prRequestId
+            method  = 'tools/list'
+            params  = @{}
+        }
+
+        Assert-True -Name "kickstart-via-pr tools/list responds" `
+            -Condition ($null -ne $prListResponse) `
+            -Message "No response"
+
+        if ($prListResponse -and $prListResponse.result) {
+            $prToolNames = $prListResponse.result.tools | ForEach-Object { $_.name }
+            Assert-True -Name "kickstart-via-pr tool 'pr_context' registered" `
+                -Condition ('pr_context' -in $prToolNames) `
+                -Message "Tool not found in tools/list"
+
+            $prToolDef = $prListResponse.result.tools | Where-Object { $_.name -eq 'pr_context' }
+            Assert-True -Name "kickstart-via-pr tool 'pr_context' has inputSchema" `
+                -Condition ($null -ne $prToolDef.inputSchema) `
+                -Message "inputSchema missing"
+        }
+
+        $prRequestId++
+        $analysisResponse = Send-McpRequest -Process $prMcpProcess -Request @{
+            jsonrpc = '2.0'
+            id      = $prRequestId
+            method  = 'tools/call'
+            params  = @{
+                name      = 'task_create'
+                arguments = @{
+                    name        = 'PR Analysis Task'
+                    description = 'Integration test for kickstart-via-pr analysis category'
+                    category    = 'analysis'
+                    priority    = 10
+                    effort      = 'S'
+                }
+            }
+        }
+
+        if ($analysisResponse -and $analysisResponse.result) {
+            $analysisText = $analysisResponse.result.content[0].text
+            $analysisObj = $analysisText | ConvertFrom-Json
+            Assert-True -Name "kickstart-via-pr task_create with category 'analysis' succeeds" `
+                -Condition ($analysisObj.success -eq $true) `
+                -Message "Failed: $analysisText"
+        } else {
+            Assert-True -Name "kickstart-via-pr task_create with category 'analysis' succeeds" `
+                -Condition ($false) `
+                -Message "Error or no response"
+        }
+    } catch {
+        Write-TestResult -Name "kickstart-via-pr MCP tests" -Status Fail -Message "Exception: $($_.Exception.Message)"
+    } finally {
+        if ($prMcpProcess) {
+            Stop-McpServer -Process $prMcpProcess
+        }
+        Remove-TestProject -Path $prTestProject
+    }
+
+    Write-Host ""
+    Write-Host "  kickstart-via-pr DIRECT TOOL TESTS" -ForegroundColor Cyan
+    Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+    $prContextScript = Join-Path $kickstartViaPrProfile "systems\mcp\tools\pr-context\script.ps1"
+    if (Test-Path $prContextScript) {
+        . $prContextScript
+
+        $directTestRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dotbot-pr-context-" + [guid]::NewGuid().ToString('N'))
+        New-Item -Path $directTestRoot -ItemType Directory -Force | Out-Null
+        $global:DotbotProjectRoot = $directTestRoot
+        Set-Content -Path (Join-Path $directTestRoot ".env.local") -Value "AZURE_DEVOPS_PAT=test-pat`nGITHUB_TOKEN=test-gh" -Encoding UTF8
+
+        $savedGithubToken = $env:GITHUB_TOKEN
+        $savedGhToken = $env:GH_TOKEN
+        $savedAdoPat = $env:AZURE_DEVOPS_PAT
+
+        try {
+            $githubResult = & {
+                function Invoke-RestMethod {
+                    param(
+                        [string]$Method = 'Get',
+                        [string]$Uri,
+                        $Headers
+                    )
+
+                    if ($Uri -eq 'https://api.github.com/repos/acme/widgets/pulls/42') {
+                        return [pscustomobject]@{
+                            number = 42
+                            title = 'Add billing validation'
+                            body = "Implements billing validation.`n`nFixes #123"
+                            html_url = 'https://github.com/acme/widgets/pull/42'
+                            state = 'open'
+                            user = [pscustomobject]@{ login = 'octocat' }
+                            head = [pscustomobject]@{ ref = 'feature/billing-validation' }
+                            base = [pscustomobject]@{ ref = 'main' }
+                        }
+                    }
+
+                    if ($Uri -eq 'https://api.github.com/repos/acme/widgets/pulls/42/files?per_page=100&page=1') {
+                        $pageFiles = [System.Collections.ArrayList]::new()
+                        for ($index = 1; $index -le 100; $index++) {
+                            [void]$pageFiles.Add([pscustomobject]@{
+                                filename = ('src/File{0:D3}.cs' -f $index)
+                                status = 'modified'
+                            })
+                        }
+
+                        return @($pageFiles)
+                    }
+
+                    if ($Uri -eq 'https://api.github.com/repos/acme/widgets/pulls/42/files?per_page=100&page=2') {
+                        return @(
+                            [pscustomobject]@{ filename = 'docs/billing.md'; status = 'modified' }
+                        )
+                    }
+
+                    if ($Uri -eq 'https://api.github.com/repos/acme/widgets/issues/123') {
+                        return [pscustomobject]@{
+                            number = 123
+                            title = 'Billing validation rules'
+                            state = 'open'
+                            html_url = 'https://github.com/acme/widgets/issues/123'
+                        }
+                    }
+
+                    throw "Unexpected GitHub URI: $Uri"
+                }
+
+                Invoke-PrContext -Arguments @{ pr_url = 'https://github.com/acme/widgets/pull/42' }
+            }
+
+            Assert-Equal -Name "Invoke-PrContext GitHub URL: provider" -Expected 'github' -Actual $githubResult.provider
+            Assert-Equal -Name "Invoke-PrContext GitHub URL: title" -Expected 'Add billing validation' -Actual $githubResult.title
+            Assert-Equal -Name "Invoke-PrContext GitHub URL: linked issue count" -Expected 1 -Actual @($githubResult.linked_issues).Count
+            Assert-Equal -Name "Invoke-PrContext GitHub URL: changed file count" -Expected 101 -Actual @($githubResult.changed_files).Count
+            Assert-Equal -Name "Invoke-PrContext GitHub URL: first changed file path" -Expected 'src/File001.cs' -Actual $githubResult.changed_files[0].path
+            Assert-Equal -Name "Invoke-PrContext GitHub URL: paginated file path included" -Expected 'docs/billing.md' -Actual $githubResult.changed_files[100].path
+
+            $githubAutoResult = & {
+                function git {
+                    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+                    $joined = $Arguments -join ' '
+                    switch ($joined) {
+                        'remote get-url origin' { return 'https://github.com/acme/service.api.git' }
+                        'branch --show-current' { return 'feature/billing-validation' }
+                        default { throw "Unexpected git invocation: $joined" }
+                    }
+                }
+
+                function Invoke-RestMethod {
+                    param(
+                        [string]$Method = 'Get',
+                        [string]$Uri,
+                        $Headers
+                    )
+
+                    if ($Uri -like 'https://api.github.com/repos/acme/service.api/pulls?*head=acme:feature/billing-validation*state=open*') {
+                        return @(
+                            [pscustomobject]@{
+                                number = 77
+                                title = 'Auto-detected PR'
+                                body = 'Detect current branch PR'
+                                html_url = 'https://github.com/acme/service.api/pull/77'
+                                state = 'open'
+                                user = [pscustomobject]@{ login = 'octocat' }
+                                head = [pscustomobject]@{ ref = 'feature/billing-validation' }
+                                base = [pscustomobject]@{ ref = 'main' }
+                            }
+                        )
+                    }
+
+                    if ($Uri -eq 'https://api.github.com/repos/acme/service.api/pulls/77/files?per_page=100&page=1') {
+                        return @([pscustomobject]@{ filename = 'src/AutoDetected.cs'; status = 'modified' })
+                    }
+
+                    throw "Unexpected GitHub auto-detect URI: $Uri"
+                }
+
+                Invoke-PrContext -Arguments @{}
+            }
+
+            Assert-Equal -Name "Invoke-PrContext GitHub auto-detect: URL" -Expected 'https://github.com/acme/service.api/pull/77' -Actual $githubAutoResult.pr_url
+            Assert-Equal -Name "Invoke-PrContext GitHub auto-detect: source branch" -Expected 'feature/billing-validation' -Actual $githubAutoResult.source_branch
+            Assert-Equal -Name "Invoke-PrContext GitHub auto-detect: repository" -Expected 'acme/service.api' -Actual $githubAutoResult.repository
+            Assert-Equal -Name "Invoke-PrContext GitHub auto-detect: changed file count" -Expected 1 -Actual @($githubAutoResult.changed_files).Count
+
+            $githubCrossRepoIssues = & {
+                function Invoke-RestMethod {
+                    param(
+                        [string]$Method = 'Get',
+                        [string]$Uri,
+                        $Headers
+                    )
+
+                    if ($Uri -eq 'https://api.github.com/repos/other-org/other-repo/issues/456') {
+                        return [pscustomobject]@{
+                            number = 456
+                            title = 'Cross-repo issue'
+                            state = 'open'
+                            html_url = 'https://github.com/other-org/other-repo/issues/456'
+                        }
+                    }
+
+                    if ($Uri -eq 'https://api.github.com/repos/acme/widgets/issues/123') {
+                        return [pscustomobject]@{
+                            number = 123
+                            title = 'Local repo issue'
+                            state = 'open'
+                            html_url = 'https://github.com/acme/widgets/issues/123'
+                        }
+                    }
+
+                    throw "Unexpected GitHub linked issue URI: $Uri"
+                }
+
+                Get-GitHubLinkedIssues -Owner 'acme' -Repo 'widgets' -Texts @('See other-org/other-repo#456 and #123')
+            }
+
+            Assert-Equal -Name "Get-GitHubLinkedIssues cross-repo count" -Expected 2 -Actual @($githubCrossRepoIssues).Count
+            Assert-Equal -Name "Get-GitHubLinkedIssues cross-repo first key" -Expected 'other-org/other-repo#456' -Actual $githubCrossRepoIssues[0].key
+            Assert-Equal -Name "Get-GitHubLinkedIssues cross-repo second key" -Expected '#123' -Actual $githubCrossRepoIssues[1].key
+
+            $adoResult = & {
+                function Invoke-RestMethod {
+                    param(
+                        [string]$Method = 'Get',
+                        [string]$Uri,
+                        $Headers
+                    )
+
+                    if ($Uri -eq 'https://dev.azure.com/contoso/Commerce/_apis/git/repositories/Storefront/pullRequests/99?api-version=7.1') {
+                        return [pscustomobject]@{
+                            pullRequestId = 99
+                            title = 'Storefront tax alignment'
+                            description = 'Align tax calculation with PRD.'
+                            status = 'active'
+                            createdBy = [pscustomobject]@{ displayName = 'Ada Lovelace' }
+                            sourceRefName = 'refs/heads/feature/tax-alignment'
+                            targetRefName = 'refs/heads/main'
+                            repository = [pscustomobject]@{
+                                name = 'Storefront'
+                                webUrl = 'https://dev.azure.com/contoso/Commerce/_git/Storefront'
+                            }
+                            url = 'https://dev.azure.com/contoso/Commerce/_apis/git/repositories/Storefront/pullRequests/99'
+                        }
+                    }
+
+                    if ($Uri -eq 'https://dev.azure.com/contoso/Commerce/_apis/git/repositories/Storefront/pullRequests/99/workitems?api-version=7.1') {
+                        return [pscustomobject]@{
+                            value = @(
+                                [pscustomobject]@{ id = '456'; url = 'https://dev.azure.com/contoso/Commerce/_apis/wit/workItems/456' }
+                            )
+                        }
+                    }
+
+                    if ($Uri -eq 'https://dev.azure.com/contoso/Commerce/_apis/wit/workItems/456?api-version=7.1') {
+                        return [pscustomobject]@{
+                            id = 456
+                            fields = [pscustomobject]@{
+                                'System.Title' = 'Tax rules rollout'
+                                'System.State' = 'Active'
+                                'System.WorkItemType' = 'User Story'
+                            }
+                            _links = [pscustomobject]@{
+                                html = [pscustomobject]@{ href = 'https://dev.azure.com/contoso/Commerce/_workitems/edit/456' }
+                            }
+                        }
+                    }
+
+                    if ($Uri -eq 'https://dev.azure.com/contoso/Commerce/_apis/git/repositories/Storefront/pullRequests/99/iterations?api-version=7.1') {
+                        return [pscustomobject]@{
+                            value = @(
+                                [pscustomobject]@{ id = 1 },
+                                [pscustomobject]@{ id = 3 }
+                            )
+                        }
+                    }
+
+                    if ($Uri -eq 'https://dev.azure.com/contoso/Commerce/_apis/git/repositories/Storefront/pullRequests/99/iterations/3/changes?$compareTo=0&$top=2000&$skip=0&api-version=7.1') {
+                        return [pscustomobject]@{
+                            changeEntries = @(
+                                [pscustomobject]@{
+                                    changeType = 'edit'
+                                    item = [pscustomobject]@{ path = '/src/TaxService.cs' }
+                                },
+                                [pscustomobject]@{
+                                    changeType = 'add'
+                                    item = [pscustomobject]@{ path = '/tests/TaxServiceTests.cs' }
+                                }
+                            )
+                            nextSkip = 2
+                            nextTop = 2000
+                        }
+                    }
+
+                    if ($Uri -eq 'https://dev.azure.com/contoso/Commerce/_apis/git/repositories/Storefront/pullRequests/99/iterations/3/changes?$compareTo=0&$top=2000&$skip=2&api-version=7.1') {
+                        return [pscustomobject]@{
+                            changeEntries = @(
+                                [pscustomobject]@{
+                                    changeType = 'rename'
+                                    item = [pscustomobject]@{ path = '/docs/TaxGuide.md' }
+                                }
+                            )
+                            nextSkip = 0
+                            nextTop = 0
+                        }
+                    }
+
+                    throw "Unexpected ADO URI: $Uri"
+                }
+
+                Invoke-PrContext -Arguments @{ pr_url = 'https://dev.azure.com/contoso/Commerce/_git/Storefront/pullrequest/99?path=/src/TaxService.cs&_a=overview' }
+            }
+
+            Assert-Equal -Name "Invoke-PrContext ADO URL: provider" -Expected 'azure-devops' -Actual $adoResult.provider
+            Assert-Equal -Name "Invoke-PrContext ADO URL: title" -Expected 'Storefront tax alignment' -Actual $adoResult.title
+            Assert-Equal -Name "Invoke-PrContext ADO URL: resolved URL" -Expected 'https://dev.azure.com/contoso/Commerce/_git/Storefront/pullrequest/99?path=/src/TaxService.cs&_a=overview' -Actual $adoResult.pr_url
+            Assert-Equal -Name "Invoke-PrContext ADO URL: linked issue count" -Expected 1 -Actual @($adoResult.linked_issues).Count
+            Assert-Equal -Name "Invoke-PrContext ADO URL: changed file count" -Expected 3 -Actual @($adoResult.changed_files).Count
+            Assert-Equal -Name "Invoke-PrContext ADO URL: first changed file path" -Expected '/src/TaxService.cs' -Actual $adoResult.changed_files[0].path
+            Assert-Equal -Name "Invoke-PrContext ADO URL: cumulative change path included" -Expected '/docs/TaxGuide.md' -Actual $adoResult.changed_files[2].path
+
+            $gitHubRemoteInfo = Convert-RemoteToGitHubInfo -RemoteUrl 'https://github.com/acme/service.api.git'
+            Assert-Equal -Name "Convert-RemoteToGitHubInfo accepts dotted repo names" -Expected 'service.api' -Actual $gitHubRemoteInfo.repo
+
+            $adoRemoteInfo = Convert-RemoteToAdoInfo -RemoteUrl 'https://dev.azure.com/contoso/Commerce/_git/Storefront.Core.git'
+            Assert-Equal -Name "Convert-RemoteToAdoInfo accepts dotted repo names" -Expected 'Storefront.Core' -Actual $adoRemoteInfo.repo
+        } finally {
+            $env:GITHUB_TOKEN = $savedGithubToken
+            $env:GH_TOKEN = $savedGhToken
+            $env:AZURE_DEVOPS_PAT = $savedAdoPat
+            if (Test-Path $directTestRoot) {
+                Remove-Item $directTestRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    } else {
+        Write-TestResult -Name "kickstart-via-pr direct tool tests" -Status Fail -Message "Tool script not found at $prContextScript"
+    }
+} else {
+    Write-TestResult -Name "kickstart-via-pr tool registration" -Status Skip -Message "kickstart-via-pr profile not found"
+}
+
+Write-Host ""
+Write-Host "  PRODUCT API DIRECT TESTS" -ForegroundColor Cyan
+Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+$repoRoot = Split-Path $PSScriptRoot -Parent
+$productApiModule = Join-Path $repoRoot "profiles\default\systems\ui\modules\ProductAPI.psm1"
+if (Test-Path $productApiModule) {
+    Import-Module $productApiModule -Force
+
+    $productApiTestProject = New-TestProject
+    try {
+        $productBotRoot = Join-Path $productApiTestProject ".bot"
+        $productDir = Join-Path $productBotRoot "workspace\product"
+        $briefingDir = Join-Path $productDir "briefing"
+        $controlDir = Join-Path $productBotRoot ".control"
+
+        New-Item -Path $briefingDir -ItemType Directory -Force | Out-Null
+        New-Item -Path $controlDir -ItemType Directory -Force | Out-Null
+
+        Set-Content -Path (Join-Path $productDir "mission.md") -Value "# Mission" -Encoding UTF8
+        Set-Content -Path (Join-Path $productDir "roadmap-overview.md") -Value "# Roadmap" -Encoding UTF8
+        Set-Content -Path (Join-Path $productDir "interview-summary.md") -Value "# Interview Summary" -Encoding UTF8
+        Set-Content -Path (Join-Path $briefingDir "pr-context.md") -Value "# Pull Request Context" -Encoding UTF8
+
+        Initialize-ProductAPI -BotRoot $productBotRoot -ControlDir $controlDir
+
+        $docs = @((Get-ProductList).docs)
+        Assert-Equal -Name "ProductAPI lists nested product docs" `
+            -Expected 4 `
+            -Actual $docs.Count
+        Assert-Equal -Name "ProductAPI keeps mission first in priority order" `
+            -Expected "mission" `
+            -Actual $docs[0].name
+        Assert-True -Name "ProductAPI includes briefing/pr-context in list" `
+            -Condition ($docs.name -contains "briefing/pr-context") `
+            -Message "Nested briefing document missing from product list"
+        Assert-True -Name "ProductAPI surfaces relative filename for briefing docs" `
+            -Condition ($docs.filename -contains "briefing/pr-context.md") `
+            -Message "Expected relative filename briefing/pr-context.md"
+
+        $briefingDoc = Get-ProductDocument -Name "briefing/pr-context"
+        Assert-True -Name "ProductAPI loads nested briefing doc by relative name" `
+            -Condition ($briefingDoc.success -eq $true -and $briefingDoc.content -match 'Pull Request Context') `
+            -Message "Nested briefing doc could not be loaded"
+
+        $encodedBriefingDoc = Get-ProductDocument -Name "briefing%2Fpr-context"
+        Assert-True -Name "ProductAPI loads nested briefing doc by encoded route name" `
+            -Condition ($encodedBriefingDoc.success -eq $true -and $encodedBriefingDoc.name -eq 'briefing/pr-context') `
+            -Message "Encoded nested route name did not resolve"
+
+        $traversalDoc = Get-ProductDocument -Name "../secrets"
+        Assert-True -Name "ProductAPI blocks path traversal outside workspace/product" `
+            -Condition ($traversalDoc.success -eq $false -and $traversalDoc._statusCode -eq 404) `
+            -Message "Path traversal should return not found"
+    } finally {
+        Remove-TestProject -Path $productApiTestProject
+        Remove-Module ProductAPI -ErrorAction SilentlyContinue
+    }
+} else {
+    Write-TestResult -Name "ProductAPI direct tests" -Status Skip -Message "Module not found at $productApiModule"
+}
 # ═══════════════════════════════════════════════════════════════════
 # CLEANUP
 # ═══════════════════════════════════════════════════════════════════
@@ -795,3 +1363,5 @@ $allPassed = Write-TestSummary -LayerName "Layer 2: Components"
 if (-not $allPassed) {
     exit 1
 }
+
+

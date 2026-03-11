@@ -98,11 +98,13 @@ You are working in a **git worktree** on branch `{{BRANCH_NAME}}`.
    - Commit after each logical unit of work
    - Use conventional commit messages
    - Include task ID: `[task:XXXXXXXX]` (first 8 chars of {{TASK_ID}})
+   - Include workspace tag: `[bot:XXXXXXXX]` (first 8 chars of {{INSTANCE_ID}})
    - Example:
      ```
      Add CalendarEvent entity with EF Core configuration
 
      [task:7b012fb8]
+     [bot:1a2b3c4d]
      Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
      ```
 

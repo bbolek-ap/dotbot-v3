@@ -38,6 +38,7 @@ function Get-NotificationSettings {
         project_name           = ""
         project_description    = ""
         poll_interval_seconds  = 30
+        instance_id            = ""
     }
 
     # Read settings.default.json
@@ -51,6 +52,9 @@ function Get-NotificationSettings {
     if (Test-Path $defaultsFile) {
         try {
             $settingsJson = Get-Content -Path $defaultsFile -Raw | ConvertFrom-Json
+            if ($settingsJson.PSObject.Properties['instance_id'] -and $settingsJson.instance_id) {
+                $merged.instance_id = "$($settingsJson.instance_id)"
+            }
             if ($settingsJson.PSObject.Properties['notifications']) {
                 $notif = $settingsJson.notifications
                 foreach ($prop in $notif.PSObject.Properties) {
@@ -66,6 +70,9 @@ function Get-NotificationSettings {
     if (Test-Path $overridesFile) {
         try {
             $overrides = Get-Content -Path $overridesFile -Raw | ConvertFrom-Json
+            if ($overrides.PSObject.Properties['instance_id'] -and $overrides.instance_id) {
+                $merged.instance_id = "$($overrides.instance_id)"
+            }
             if ($overrides.PSObject.Properties['notifications']) {
                 $notif = $overrides.notifications
                 foreach ($prop in $notif.PSObject.Properties) {
@@ -155,10 +162,19 @@ function Send-TaskNotification {
     $baseUrl = $Settings.server_url.TrimEnd('/')
     $headers = @{ "X-Api-Key" = $Settings.api_key }
 
-    # Derive project ID from project_name or use task ID prefix
+    # Prefer stable workspace GUID as project ID; fallback to legacy slug
     $projectName = if ($Settings.project_name) { $Settings.project_name } else { "dotbot" }
     $projectDesc = if ($Settings.project_description) { $Settings.project_description } else { "" }
-    $projectId = ($projectName.ToLower() -replace '[^a-z0-9]+', '-').Trim('-')
+    $projectId = $null
+    if ($Settings.PSObject.Properties['instance_id'] -and $Settings.instance_id) {
+        $parsedProjectGuid = [guid]::Empty
+        if ([guid]::TryParse("$($Settings.instance_id)", [ref]$parsedProjectGuid)) {
+            $projectId = $parsedProjectGuid.ToString()
+        }
+    }
+    if (-not $projectId) {
+        $projectId = ($projectName.ToLower() -replace '[^a-z0-9]+', '-').Trim('-')
+    }
 
     # Use stable question ID derived as a deterministic GUID from task-id + question-id
     # This behaves like a UUIDv5-style name-based GUID, ensuring stability across retries.
@@ -285,9 +301,17 @@ function Get-TaskNotificationResponse {
 
     $projectId = $Notification.project_id
     if (-not $projectId) {
-        # Derive from settings as fallback
-        $projectName = if ($Settings.project_name) { $Settings.project_name } else { "dotbot" }
-        $projectId = ($projectName.ToLower() -replace '[^a-z0-9]+', '-').Trim('-')
+        # Prefer settings.instance_id for backward-compatible polling fallback
+        if ($Settings.PSObject.Properties['instance_id'] -and $Settings.instance_id) {
+            $parsedProjectGuid = [guid]::Empty
+            if ([guid]::TryParse("$($Settings.instance_id)", [ref]$parsedProjectGuid)) {
+                $projectId = $parsedProjectGuid.ToString()
+            }
+        }
+        if (-not $projectId) {
+            $projectName = if ($Settings.project_name) { $Settings.project_name } else { "dotbot" }
+            $projectId = ($projectName.ToLower() -replace '[^a-z0-9]+', '-').Trim('-')
+        }
     }
 
     $questionId = $Notification.question_id

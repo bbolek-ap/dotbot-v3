@@ -69,11 +69,15 @@ if (1 -in $layersToRun) {
 # Layer 2: Components
 if (2 -in $layersToRun) {
     & pwsh -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\Test-Components.ps1"
-    $exitCode = $LASTEXITCODE
+    $componentsCode = $LASTEXITCODE
+
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\Test-TaskActions.ps1"
+    $taskActionsCode = $LASTEXITCODE
+
+    $exitCode = if ($componentsCode -ne 0 -or $taskActionsCode -ne 0) { 1 } else { 0 }
     $layerResults["2"] = ($exitCode -eq 0)
     if ($exitCode -ne 0) { $overallFailed = $true }
 }
-
 # Layer 3: Mock Claude
 if (3 -in $layersToRun) {
     & pwsh -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\Test-MockClaude.ps1"
@@ -115,3 +119,4 @@ if ($overallFailed) {
     Write-Host ""
     exit 0
 }
+

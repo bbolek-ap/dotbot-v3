@@ -133,7 +133,7 @@ function renderProcessList(processes) {
                 const ttlMs = 5 * 60 * 1000 - (Date.now() - failedAt.getTime());
                 if (ttlMs > 0) {
                     const ttlMin = Math.ceil(ttlMs / 60000);
-                    ttlHtml = `<span class="process-ttl">(clears in ${ttlMin}m)</span>`;
+                    ttlHtml = `<span class="process-ttl">(clears in ${ttlMin}min)</span>`;
                 }
             }
 
@@ -469,7 +469,7 @@ function getTimeAgo(isoString) {
     const diff = Date.now() - new Date(isoString).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins}m ago`;
+    if (mins < 60) return `${mins}min ago`;
     const hours = Math.floor(mins / 60);
     if (hours < 24) return `${hours}h ago`;
     return `${Math.floor(hours / 24)}d ago`;

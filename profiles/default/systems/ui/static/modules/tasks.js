@@ -16,6 +16,10 @@ function initTaskClicks() {
 
     // Delegate for dynamic task lists
     document.addEventListener('click', (e) => {
+        if (e.target.closest('.roadmap-task-action') || e.target.closest('.roadmap-header-action')) {
+            return;
+        }
+
         const taskItem = e.target.closest('.task-list-item, .pipeline-task');
         if (taskItem && taskItem.dataset.taskId) {
             const task = findTaskById(taskItem.dataset.taskId);
@@ -314,38 +318,59 @@ function buildOverviewSection(task) {
 }
 
 /**
+ * Normalize task list items into displayable text.
+ */
+function getTaskListDisplayText(item) {
+    if (item == null) return '';
+    if (typeof item === 'string') return item;
+    if (typeof item !== 'object') return `${item}`;
+
+    for (const key of ['text', 'title', 'name', 'description', 'criterion', 'label', 'value', 'step', 'requirement', 'content', 'summary']) {
+        if (typeof item[key] === 'string' && item[key].trim()) {
+            return item[key];
+        }
+    }
+
+    const firstStringValue = Object.values(item).find(value => typeof value === 'string' && value.trim());
+    return firstStringValue || '';
+}
+
+function normalizeTaskListItems(value) {
+    const items = Array.isArray(value) ? value : (value == null ? [] : [value]);
+    return items.map(item => getTaskListDisplayText(item)).filter(Boolean);
+}
+
+/**
  * Build Requirements section HTML
  */
 function buildRequirementsSection(task) {
     let html = '';
-    const hasSteps = task.steps && task.steps.length > 0;
-    const hasCriteria = task.acceptance_criteria && task.acceptance_criteria.length > 0;
+    const stepsArr = normalizeTaskListItems(task.steps);
+    const criteriaArr = normalizeTaskListItems(task.acceptance_criteria);
+    const hasSteps = stepsArr.length > 0;
+    const hasCriteria = criteriaArr.length > 0;
 
     if (!hasSteps && !hasCriteria) {
         html += `<div class="task-empty-state">No requirements defined for this task.</div>`;
         return html;
     }
 
-    // Steps
     if (hasSteps) {
         html += `<div class="task-list-section">`;
         html += `<div class="task-list-header">Implementation Steps</div>`;
         html += `<ol class="task-numbered-list">`;
-        const stepsArr = Array.isArray(task.steps) ? task.steps : [task.steps];
-        stepsArr.forEach(s => {
-            html += `<li>${escapeHtml(s)}</li>`;
+        stepsArr.forEach(step => {
+            html += `<li>${escapeHtml(step)}</li>`;
         });
         html += `</ol></div>`;
     }
 
-    // Acceptance criteria
     if (hasCriteria) {
         html += `<div class="task-list-section">`;
         html += `<div class="task-list-header">Acceptance Criteria</div>`;
         html += `<ul class="task-bullet-list">`;
-        const criteriaArr = Array.isArray(task.acceptance_criteria) ? task.acceptance_criteria : [task.acceptance_criteria];
-        criteriaArr.forEach(c => {
-            html += `<li>${escapeHtml(c)}</li>`;
+        criteriaArr.forEach(criteria => {
+            html += `<li>${escapeHtml(criteria)}</li>`;
         });
         html += `</ul></div>`;
     }
@@ -853,3 +878,8 @@ function initPlanModalClose() {
         }
     });
 }
+
+
+
+
+
