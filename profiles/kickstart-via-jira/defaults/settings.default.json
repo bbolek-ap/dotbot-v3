@@ -129,7 +129,7 @@
         "name": "Generate Product Documents",
         "workflow": "01-plan-product.md",
         "required_outputs": ["mission.md"],
-        "front_matter_docs": ["mission.md", "roadmap-overview.md"],
+        "front_matter_docs": ["mission.md", "roadmap-overview.md", "research-repos.md"],
         "commit_paths": ["workspace/product/"],
         "commit_message": "chore(kickstart): phase 1 — product documents"
       },

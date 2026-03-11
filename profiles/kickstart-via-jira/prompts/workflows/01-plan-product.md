@@ -102,7 +102,50 @@ Expanded description of the business need, regulatory requirements, or strategic
 (from jira-context.md)
 ```
 
-### Step 4: Create `roadmap-overview.md`
+### Step 5: Extract Known Repos → Seed `research-repos.md`
+
+Scan all briefing documents (`jira-context.md`, `interview-summary.md`, and any files in `briefing/`) for explicitly named repositories, Azure DevOps project references, or git URLs. Look for:
+
+- Repository names mentioned in Jira descriptions, Confluence pages, or uploaded specs
+- ADO project/repo references (e.g., `Project/RepoName`, Azure DevOps URLs)
+- Git clone URLs (`https://dev.azure.com/...`, `git@ssh.dev.azure.com:...`)
+- References like "the Ark repo", "VO e-Com Rovva clone", etc.
+
+**If repos are found**, write a seed `.bot/workspace/product/research-repos.md` using the standard tier-table format:
+
+```markdown
+# Repos Potentially Affected
+
+## Context
+
+Seed file generated from briefing documents. Repos listed below were explicitly named in the initiative briefing. Impact and tier classifications are preliminary — based on how the repo was referenced, not code analysis.
+
+If Sourcebot research runs later, it will merge with this seed (seed entries take precedence as they reflect user-briefed repos).
+
+---
+
+## Tier 1: Core Feature Repos (Directly Affected)
+
+| Repo | Project | Purpose | Impact |
+|------|---------|---------|--------|
+| {RepoName} | {ADOProject or "TBD"} | {Why it was mentioned in briefing} | {HIGH or MEDIUM — HIGH if briefing indicates direct changes needed} |
+
+---
+
+## Summary: Key Repos by Priority
+
+### Must-change (repos where changes are definitely required)
+
+1. {RepoName} — {one-line from briefing context}
+```
+
+Rules:
+- Place repos in Tier 1 unless the briefing clearly indicates a supporting/peripheral role
+- Default to HIGH impact for repos explicitly named as needing changes; MEDIUM if mentioned but role is unclear
+- Use the ADO project name if identifiable from context; otherwise use `TBD`
+- **If NO repos are mentioned in any briefing document, do NOT create `research-repos.md`** — this preserves the existing skip behavior for downstream phases
+
+### Step 6: Create `roadmap-overview.md`
 
 Write `.bot/workspace/product/roadmap-overview.md` with the research plan:
 
@@ -177,18 +220,45 @@ Per-repo deep dives for MEDIUM+ impact repos (created after Phase 1 completes):
 
 ## Clarifying Questions
 
-This workflow does NOT ask clarifying questions in interactive mode. The initiative context from Atlassian provides sufficient direction. If critical information is missing, it will be marked as `<!-- UNRESOLVED -->` in the jira-context.md and addressed during research.
+After creating all product documents, review them for gaps, ambiguities, or missing information that would meaningfully benefit from user input. If you find such gaps, write `.bot/workspace/product/clarification-questions.json`:
+
+```json
+{
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Specific question about a gap or ambiguity",
+      "context": "What you found in the briefing and why this needs clarification",
+      "options": [
+        { "key": "A", "label": "Option label", "rationale": "Why this option" },
+        { "key": "B", "label": "Option label", "rationale": "Why this option" }
+      ],
+      "recommendation": "A"
+    }
+  ]
+}
+```
+
+Rules:
+- Each question must have 2-5 options with clear rationale
+- Option keys are single letters (A through E); `recommendation` indicates the suggested choice
+- Focus on gaps that would change the mission, scope, or research plan — not trivial details
+- If the briefing is sufficiently clear, do NOT write the file — no interruption needed
+- The runtime will detect this file and surface questions to the user via the UI
 
 ## Output Location
 
 All files go in `.bot/workspace/product/`:
 - `.bot/workspace/product/mission.md`
 - `.bot/workspace/product/roadmap-overview.md`
+- `.bot/workspace/product/research-repos.md` (only if repos found in briefing docs)
 
 ## Success Criteria
 
-- Two markdown files created
+- `mission.md` and `roadmap-overview.md` created
 - `mission.md` starts with `## Executive Summary` section
 - Content is derived from initiative context (not generic templates)
 - Roadmap reflects the multi-repo research lifecycle
+- If briefing docs name repos, `research-repos.md` seed file created with standard tier-table format
+- If gaps found, `clarification-questions.json` written with structured options
 - No `tech-stack.md` or `entity-model.md` created
