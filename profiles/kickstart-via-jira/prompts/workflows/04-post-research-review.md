@@ -94,16 +94,25 @@ Write `.bot/workspace/product/research-summary.md` with the following structure:
 | Deep dives | {count found} | {1-line summary} |
 ```
 
-### Step 3: Check for Blocking Ambiguities
+### Step 3: Surface Gaps and Open Questions
 
-If there are critical gaps that would prevent implementation planning (e.g., unclear scope, missing architectural decisions, unresolved technical approach), write `.bot/workspace/product/clarification-questions.json`:
+Review the research findings and `mission.md` for gaps, ambiguities, or open questions that would **meaningfully benefit from user input**. This includes:
+
+- Gaps that would affect implementation planning (scope, architecture, technical approach)
+- Open questions explicitly listed in `mission.md` (these MUST be surfaced)
+- Ambiguities where research found conflicting information
+- Scope questions where user intent is unclear
+
+**Important:** If `mission.md` contains open questions (e.g., in a "## Open Questions" section, or marked with `<!-- UNRESOLVED -->`), these MUST be included in `clarification-questions.json`. They were deferred during product planning specifically to be surfaced after research provides more context.
+
+Write `.bot/workspace/product/clarification-questions.json`:
 
 ```json
 {
   "questions": [
     {
       "id": "q1",
-      "question": "Specific question about a blocking gap",
+      "question": "Specific question about a gap or open question",
       "context": "What research found and why this needs clarification",
       "options": [
         { "key": "A", "label": "Option label", "rationale": "Why this option" },
@@ -115,15 +124,16 @@ If there are critical gaps that would prevent implementation planning (e.g., unc
 }
 ```
 
-Only write clarification questions for **blocking** gaps — things that genuinely prevent moving forward. Non-blocking uncertainties should be noted in the Gaps table but don't need user input.
+Write clarification questions for gaps that would **meaningfully benefit from user input** — not just blocking issues. The threshold is: "Would a user's answer here improve the quality of the implementation plan?" If yes, ask.
 
-If there are no blocking gaps, do NOT write clarification-questions.json.
+If there are genuinely no gaps worth asking about, do NOT write clarification-questions.json.
 
 ## Critical Rules
 
 - Read actual research outputs — do NOT re-fetch data from Jira or Confluence
 - Do NOT duplicate the kickstart interview — this phase summarises what was already researched
 - Always write `research-summary.md`
-- Only write `clarification-questions.json` if there are genuinely blocking ambiguities
+- Write `clarification-questions.json` if there are gaps that would meaningfully benefit from user input
+- If `mission.md` contains open questions, they MUST appear in `clarification-questions.json`
 - Do NOT create any other files (no mission.md updates, no new research files)
 - Do NOT use task management tools

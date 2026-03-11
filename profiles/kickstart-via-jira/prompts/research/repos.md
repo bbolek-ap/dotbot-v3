@@ -17,6 +17,12 @@ Your task is to discover all repositories relevant to the initiative using Sourc
 
 `.bot/workspace/product/research-repos.md`
 
+**Important — Seed File Merge:** If `research-repos.md` already exists, it is a seed file generated from briefing documents (Phase 01). Seed entries represent repos explicitly named by the user and are authoritative. When writing your results:
+- **Preserve all seed entries** — do not remove or downgrade repos that came from the seed
+- **Merge Sourcebot findings** — add any additional repos discovered through code search
+- **Enrich seed entries** — update Purpose, Impact, or Project fields with evidence from Sourcebot if you found better information, but do not lower impact classifications from the seed
+- If a seed entry has `TBD` for the Project field and you discover the correct project via Sourcebot, fill it in
+
 This document must be based on evidence found in actual source code, database scripts, configuration files, and test suites — not assumptions about what might exist.
 
 You are strictly prohibited from using emojis in the report.
