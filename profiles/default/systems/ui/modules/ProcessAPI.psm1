@@ -346,7 +346,7 @@ function Start-ProcessLaunch {
         process_id = $launchedProcId
         pid = $proc.Id
         type = $Type
-        model = $launchModel
+        model = $Model
     }
 }
 
