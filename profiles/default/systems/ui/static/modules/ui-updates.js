@@ -463,9 +463,7 @@ function updatePipelineColumn(containerId, tasks, type) {
         if (type === 'done' && task.status === 'skipped') {
             completedBadge = `<span class="task-tag phase-tag">skipped</span>`;
         } else if (type === 'done' && task.completed_at) {
-            const duration = task.started_at
-                ? formatDuration(task.started_at, task.completed_at)
-                : formatCompactDate(task.completed_at);
+            const duration = formatTaskDuration(task) || formatCompactDate(task.completed_at);
             completedBadge = `<span class="task-tag completed-date">${duration}</span>`;
         }
 

@@ -945,6 +945,10 @@ if ($Type -in @('analysis', 'execution')) {
                     $branchName = $wtInfo.branch_name
                     Write-Status "Using worktree: $worktreePath" -Type Info
                 } else {
+                    # Guard: ensure main repo is on base branch before creating a new worktree (Fix: wrong-branch merge)
+                    try { Assert-OnBaseBranch -ProjectRoot $projectRoot | Out-Null } catch {
+                        Write-Status "Branch guard warning: $($_.Exception.Message)" -Type Warn
+                    }
                     $wtResult = New-TaskWorktree -TaskId $task.id -TaskName $task.name `
                         -ProjectRoot $projectRoot -BotRoot $botRoot
                     if ($wtResult.success) {
@@ -1269,13 +1273,21 @@ Do NOT implement the task. Your job is research and preparation only.
                 # Clean up worktree for failed/skipped tasks to unblock analysis
                 if ($Type -eq 'execution' -and $worktreePath) {
                     Write-Status "Cleaning up worktree for failed task..." -Type Info
-                    Remove-Junctions -WorktreePath $worktreePath | Out-Null
-                    git -C $projectRoot worktree remove $worktreePath --force 2>$null
-                    git -C $projectRoot branch -D $branchName 2>$null
-                    Initialize-WorktreeMap -BotRoot $botRoot
-                    $map = Read-WorktreeMap
-                    $map.Remove($task.id)
-                    Write-WorktreeMap -Map $map
+                    try {
+                        Remove-Junctions -WorktreePath $worktreePath -ErrorOnFailure $false | Out-Null
+                        git -C $projectRoot worktree remove $worktreePath --force 2>$null
+                        git -C $projectRoot branch -D $branchName 2>$null
+                    } finally {
+                        # Map removal always runs even if junction/worktree cleanup throws (Fix: inconsistent registry)
+                        Initialize-WorktreeMap -BotRoot $botRoot
+                        Invoke-WorktreeMapLocked -Action {
+                            $cleanupMap = Read-WorktreeMap
+                            $cleanupMap.Remove($task.id)
+                            Write-WorktreeMap -Map $cleanupMap
+                        }
+                        # Re-assert base branch after failed-task cleanup (Fix: wrong-branch merge)
+                        try { Assert-OnBaseBranch -ProjectRoot $projectRoot | Out-Null } catch {}
+                    }
                 }
 
                 # Update session failure counters (execution only)
@@ -1384,6 +1396,19 @@ elseif ($Type -eq 'workflow') {
     $todoCount = if ($initIndex.Todo) { $initIndex.Todo.Count } else { 0 }
     $analysedCount = if ($initIndex.Analysed) { $initIndex.Analysed.Count } else { 0 }
     Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Task index loaded: $todoCount todo, $analysedCount analysed"
+    
+    # Pre-flight: warn if main repo has uncommitted non-.bot/ files.
+    # These don't block execution (verification runs in the worktree) but can
+    # complicate the squash-merge stash/pop if left unresolved.
+    try {
+        $mainDirtyStatus = git -C $projectRoot status --porcelain 2>$null
+        $mainDirtyFiles  = @($mainDirtyStatus | Where-Object { $_ -notmatch '\.bot/' })
+        if ($mainDirtyFiles.Count -gt 0) {
+            $fileList = ($mainDirtyFiles | ForEach-Object { $_.Substring(3).Trim() }) -join ', '
+            Write-Status "Pre-flight: Main repo has $($mainDirtyFiles.Count) uncommitted non-.bot/ file(s). Commit them to avoid squash-merge complications: $fileList" -Type Warn
+            Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Pre-flight warning: Main repo has $($mainDirtyFiles.Count) uncommitted file(s) outside .bot/ ($fileList). Consider committing before workflow."
+        }
+    } catch {}
 
     $tasksProcessed = 0
     $maxRetriesPerTask = 2
@@ -1717,6 +1742,10 @@ Do NOT implement the task. Your job is research and preparation only.
                     $branchName = $wtInfo.branch_name
                     Write-Status "Using worktree: $worktreePath" -Type Info
                 } else {
+                    # Guard: ensure main repo is on base branch before creating a new worktree (Fix: wrong-branch merge)
+                    try { Assert-OnBaseBranch -ProjectRoot $projectRoot | Out-Null } catch {
+                        Write-Status "Branch guard warning: $($_.Exception.Message)" -Type Warn
+                    }
                     $wtResult = New-TaskWorktree -TaskId $task.id -TaskName $task.name `
                         -ProjectRoot $projectRoot -BotRoot $botRoot
                     if ($wtResult.success) {
@@ -1845,6 +1874,26 @@ Work on this task autonomously. When complete, ensure you call task_mark_done vi
                     Invoke-SessionIncrementCompleted -Arguments @{} | Out-Null
                     $taskSuccess = $true
                     break
+                }
+
+                # Task not completed - log diagnostic to help distinguish failure modes:
+                # (a) task_mark_done was called but verification blocked it  → task still in in-progress/
+                # (b) task_mark_done was never called (agent forgot)          → task not in any terminal dir
+                $inProgressDir = Join-Path $tasksBaseDir "in-progress"
+                $stillInProgress = $false
+                try {
+                    $stillInProgress = $null -ne (
+                        Get-ChildItem -Path $inProgressDir -Filter "*.json" -File -ErrorAction SilentlyContinue |
+                        Where-Object {
+                            try { (Get-Content $_.FullName -Raw | ConvertFrom-Json).id -eq $task.id } catch { $false }
+                        } | Select-Object -First 1
+                    )
+                } catch {}
+
+                if ($stillInProgress) {
+                    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Completion check failed (attempt $attemptNumber): '$($task.name)' still in in-progress/. Check activity log: if a 'task_mark_done blocked' entry exists, verification failed; otherwise task_mark_done was likely never called."
+                } else {
+                    Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Completion check failed (attempt $attemptNumber): '$($task.name)' not found in in-progress/ or done/ (unexpected state)."
                 }
 
                 # Task not completed - handle failure
@@ -1978,13 +2027,21 @@ Work on this task autonomously. When complete, ensure you call task_mark_done vi
                 # Clean up worktree for failed/skipped tasks
                 if ($worktreePath) {
                     Write-Status "Cleaning up worktree for failed task..." -Type Info
-                    Remove-Junctions -WorktreePath $worktreePath | Out-Null
-                    git -C $projectRoot worktree remove $worktreePath --force 2>$null
-                    git -C $projectRoot branch -D $branchName 2>$null
-                    Initialize-WorktreeMap -BotRoot $botRoot
-                    $map = Read-WorktreeMap
-                    $map.Remove($task.id)
-                    Write-WorktreeMap -Map $map
+                    try {
+                        Remove-Junctions -WorktreePath $worktreePath -ErrorOnFailure $false | Out-Null
+                        git -C $projectRoot worktree remove $worktreePath --force 2>$null
+                        git -C $projectRoot branch -D $branchName 2>$null
+                    } finally {
+                        # Map removal always runs even if junction/worktree cleanup throws (Fix: inconsistent registry)
+                        Initialize-WorktreeMap -BotRoot $botRoot
+                        Invoke-WorktreeMapLocked -Action {
+                            $cleanupMap = Read-WorktreeMap
+                            $cleanupMap.Remove($task.id)
+                            Write-WorktreeMap -Map $cleanupMap
+                        }
+                        # Re-assert base branch after failed-task cleanup (Fix: wrong-branch merge)
+                        try { Assert-OnBaseBranch -ProjectRoot $projectRoot | Out-Null } catch {}
+                    }
                 }
 
                 # Update session failure counters

@@ -101,8 +101,8 @@ function Get-ProviderModels {
 function Resolve-ProviderModelId {
     <#
     .SYNOPSIS
-    Maps a model alias (e.g. "Opus") to its full model ID (e.g. "claude-opus-4-6").
-    If the input is already a full model ID, returns it as-is.
+    Maps a model alias (e.g. "Opus") to the provider's configured CLI model selector.
+    If the input is already a configured model selector, returns it as-is.
     #>
     [CmdletBinding()]
     param(

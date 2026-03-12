@@ -601,6 +601,7 @@ function Set-ActiveProvider {
 function Get-NotificationConfig {
     $settingsDefaultFile = Join-Path $script:Config.BotRoot "defaults\settings.default.json"
     $overridesFile = Join-Path $script:Config.ControlDir "settings.json"
+    $uiSettingsFile = Join-Path $script:Config.ControlDir "ui-settings.json"
 
     $defaults = @{
         enabled               = $false
@@ -612,6 +613,7 @@ function Get-NotificationConfig {
         project_description   = ""
         poll_interval_seconds = 30
     }
+    $soundEnabled = $false
 
     try {
         # Layer 1: checked-in defaults
@@ -622,6 +624,9 @@ function Get-NotificationConfig {
                     if ($defaults.ContainsKey($prop.Name)) {
                         $defaults[$prop.Name] = $prop.Value
                     }
+                }
+                if ($settingsData.notifications.PSObject.Properties['sound_enabled']) {
+                    $soundEnabled = [bool]$settingsData.notifications.sound_enabled
                 }
             }
         }
@@ -635,7 +640,20 @@ function Get-NotificationConfig {
                         $defaults[$prop.Name] = $prop.Value
                     }
                 }
+                if ($overrides.notifications.PSObject.Properties['sound_enabled']) {
+                    $soundEnabled = [bool]$overrides.notifications.sound_enabled
+                }
             }
+        }
+
+        # Layer 3: local UI preferences
+        if (Test-Path $uiSettingsFile) {
+            try {
+                $uiSettings = Get-Content $uiSettingsFile -Raw | ConvertFrom-Json
+                if ($uiSettings.PSObject.Properties['notificationSoundEnabled']) {
+                    $soundEnabled = [bool]$uiSettings.notificationSoundEnabled
+                }
+            } catch { }
         }
 
         # Mask api_key for display (show last 4 chars only)
@@ -648,6 +666,7 @@ function Get-NotificationConfig {
 
         return @{
             enabled               = $defaults.enabled
+            sound_enabled         = $soundEnabled
             server_url            = $defaults.server_url
             api_key_masked        = $maskedKey
             api_key_set           = [bool]$defaults.api_key
@@ -668,6 +687,7 @@ function Set-NotificationConfig {
     )
     $settingsDefaultFile = Join-Path $script:Config.BotRoot "defaults\settings.default.json"
     $overridesFile = Join-Path $script:Config.ControlDir "settings.json"
+    $uiSettingsFile = Join-Path $script:Config.ControlDir "ui-settings.json"
 
     # Non-secret settings go in settings.default.json
     $settingsData = if (Test-Path $settingsDefaultFile) {
@@ -690,48 +710,120 @@ function Set-NotificationConfig {
     }
 
     $notif = $settingsData.notifications
+    $settingsChanged = $false
+    $legacySoundEnabled = $null
 
-    if ($null -ne $Body.enabled) { $notif.enabled = [bool]$Body.enabled }
-    if ($null -ne $Body.server_url) { $notif.server_url = [string]$Body.server_url }
+    if ($notif.PSObject.Properties['sound_enabled']) {
+        $legacySoundEnabled = [bool]$notif.sound_enabled
+        [void]$notif.PSObject.Properties.Remove('sound_enabled')
+        $settingsChanged = $true
+    }
+
+    if ($null -ne $Body.enabled) {
+        $notif.enabled = [bool]$Body.enabled
+        $settingsChanged = $true
+    }
+    if ($null -ne $Body.server_url) {
+        $notif.server_url = [string]$Body.server_url
+        $settingsChanged = $true
+    }
     if ($null -ne $Body.channel) {
         $validChannels = @("teams", "email", "jira")
         if ($Body.channel -in $validChannels) {
             $notif.channel = [string]$Body.channel
+            $settingsChanged = $true
         }
     }
-    if ($null -ne $Body.recipients) { $notif.recipients = @($Body.recipients) }
-    if ($null -ne $Body.project_name) { $notif.project_name = [string]$Body.project_name }
-    if ($null -ne $Body.project_description) { $notif.project_description = [string]$Body.project_description }
+    if ($null -ne $Body.recipients) {
+        $notif.recipients = @($Body.recipients)
+        $settingsChanged = $true
+    }
+    if ($null -ne $Body.project_name) {
+        $notif.project_name = [string]$Body.project_name
+        $settingsChanged = $true
+    }
+    if ($null -ne $Body.project_description) {
+        $notif.project_description = [string]$Body.project_description
+        $settingsChanged = $true
+    }
     if ($null -ne $Body.poll_interval_seconds) {
         $interval = [int]$Body.poll_interval_seconds
         if ($interval -lt 5) { $interval = 5 }
         $notif.poll_interval_seconds = $interval
+        $settingsChanged = $true
     }
 
-    $settingsData | ConvertTo-Json -Depth 5 | Set-Content $settingsDefaultFile -Force
+    if ($settingsChanged) {
+        $settingsData | ConvertTo-Json -Depth 5 | Set-Content $settingsDefaultFile -Force
+    }
 
     # API key goes in the gitignored overrides file
-    if ($null -ne $Body.api_key -and $Body.api_key -ne '') {
-        $overrides = @{}
-        if (Test-Path $overridesFile) {
-            try {
-                $existing = Get-Content $overridesFile -Raw | ConvertFrom-Json
-                foreach ($prop in $existing.PSObject.Properties) {
-                    $overrides[$prop.Name] = $prop.Value
-                }
-            } catch { }
-        }
+    $overrides = @{}
+    $overridesChanged = $false
+    if (Test-Path $overridesFile) {
+        try {
+            $existing = Get-Content $overridesFile -Raw | ConvertFrom-Json
+            foreach ($prop in $existing.PSObject.Properties) {
+                $overrides[$prop.Name] = $prop.Value
+            }
+        } catch { }
+    }
 
+    if ($overrides.ContainsKey('notifications') -and $overrides['notifications'] -is [PSCustomObject]) {
+        $hash = @{}
+        foreach ($p in $overrides['notifications'].PSObject.Properties) { $hash[$p.Name] = $p.Value }
+        $overrides['notifications'] = $hash
+    }
+
+    if ($overrides.ContainsKey('notifications') -and $overrides['notifications'].ContainsKey('sound_enabled')) {
+        if ($null -eq $legacySoundEnabled) {
+            $legacySoundEnabled = [bool]$overrides['notifications']['sound_enabled']
+        }
+        $overrides['notifications'].Remove('sound_enabled')
+        $overridesChanged = $true
+    }
+
+    $uiSettings = @{
+        showDebug = $false
+        showVerbose = $false
+        analysisModel = "Opus"
+        executionModel = "Opus"
+    }
+    $uiSettingsChanged = $false
+    $uiSettingsHasSoundPreference = $false
+    if (Test-Path $uiSettingsFile) {
+        try {
+            $existingUiSettings = Get-Content $uiSettingsFile -Raw | ConvertFrom-Json
+            foreach ($prop in $existingUiSettings.PSObject.Properties) {
+                $uiSettings[$prop.Name] = $prop.Value
+            }
+            if ($existingUiSettings.PSObject.Properties['notificationSoundEnabled']) {
+                $uiSettingsHasSoundPreference = $true
+            }
+        } catch { }
+    }
+
+    if ($null -ne $Body.sound_enabled) {
+        $uiSettings.notificationSoundEnabled = [bool]$Body.sound_enabled
+        $uiSettingsChanged = $true
+    } elseif (-not $uiSettingsHasSoundPreference -and $null -ne $legacySoundEnabled) {
+        $uiSettings.notificationSoundEnabled = [bool]$legacySoundEnabled
+        $uiSettingsChanged = $true
+    }
+
+    if ($uiSettingsChanged) {
+        $uiSettings | ConvertTo-Json -Depth 5 | Set-Content $uiSettingsFile -Force
+    }
+
+    if ($null -ne $Body.api_key -and $Body.api_key -ne '') {
         if (-not $overrides.ContainsKey('notifications')) {
             $overrides['notifications'] = @{}
         }
-        if ($overrides['notifications'] -is [PSCustomObject]) {
-            $hash = @{}
-            foreach ($p in $overrides['notifications'].PSObject.Properties) { $hash[$p.Name] = $p.Value }
-            $overrides['notifications'] = $hash
-        }
         $overrides['notifications']['api_key'] = [string]$Body.api_key
+        $overridesChanged = $true
+    }
 
+    if ($overridesChanged) {
         $overrides | ConvertTo-Json -Depth 5 | Set-Content $overridesFile -Force
     }
 

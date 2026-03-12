@@ -16,7 +16,7 @@ Validate that all existing Claude workflows continue to work identically when `p
 
 ### Model Resolution
 - [ ] `"Opus"` still resolves to `claude-opus-4-6`
-- [ ] `"Sonnet"` still resolves to `claude-sonnet-4-5-20250929`
+- [ ] `"Sonnet"` still resolves to `claude-sonnet-4-6`
 - [ ] `"Haiku"` still resolves to `claude-haiku-4-5-20251001`
 - [ ] Settings `analysis.model: "Opus"` still works
 - [ ] Settings `execution.model: "Opus"` still works

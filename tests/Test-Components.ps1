@@ -572,8 +572,8 @@ if ($providerCliLoaded) {
     $resolvedId = $null
     try { $resolvedId = Resolve-ProviderModelId -ModelAlias "Opus" -ProviderName "claude" } catch {}
     Assert-True -Name "Resolve-ProviderModelId maps Opus" `
-        -Condition ($resolvedId -eq "claude-opus-4-6") `
-        -Message "Expected claude-opus-4-6, got $resolvedId"
+        -Condition ($resolvedId -eq "opus") `
+        -Message "Expected opus, got $resolvedId"
 
     # Test cross-provider model rejection
     $crossProviderError = $false
@@ -1363,5 +1363,4 @@ $allPassed = Write-TestSummary -LayerName "Layer 2: Components"
 if (-not $allPassed) {
     exit 1
 }
-
 

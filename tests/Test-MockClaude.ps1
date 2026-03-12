@@ -127,7 +127,7 @@ try {
             $streamError = $null
             try {
                 # Redirect all output to null — we just want to verify no crash
-                Invoke-ClaudeStream -Prompt "Test prompt for mock validation" -Model "claude-opus-4-6" *>&1 | Out-Null
+                Invoke-ClaudeStream -Prompt "Test prompt for mock validation" -Model "opus" *>&1 | Out-Null
                 Assert-True -Name "Invoke-ClaudeStream doesn't crash with mock" -Condition $true
             } catch {
                 $streamError = $_.Exception.Message
@@ -166,7 +166,7 @@ try {
 
             # Run Invoke-ClaudeStream — it should detect the rate limit
             try {
-                Invoke-ClaudeStream -Prompt "Rate limit test" -Model "claude-opus-4-6" *>&1 | Out-Null
+                Invoke-ClaudeStream -Prompt "Rate limit test" -Model "opus" *>&1 | Out-Null
             } catch {
                 # May throw on rate limit, that's OK
             }

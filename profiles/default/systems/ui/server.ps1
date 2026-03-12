@@ -229,6 +229,42 @@ function Get-BotDirectoryList {
     return @{ groups = $sorted } | ConvertTo-Json -Depth 5 -Compress
 }
 
+function Get-StaticAssetVersion {
+    param(
+        [Parameter(Mandatory)]
+        [string]$RelativePath
+    )
+
+    $normalizedPath = $RelativePath.TrimStart('/').Replace('/', '\')
+    $assetPath = Join-Path $staticRoot $normalizedPath
+    if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf)) {
+        return $null
+    }
+
+    return (Get-Item -LiteralPath $assetPath).LastWriteTimeUtc.Ticks.ToString()
+}
+
+function Add-StaticAssetVersions {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Html
+    )
+
+    $pattern = '(?<attr>\b(?:src|href))="(?<path>(?!https?:|data:|#|//)[^"?]+?\.(?:js|css|json))(?<query>\?[^"]*)?"'
+
+    return [regex]::Replace($Html, $pattern, {
+        param($match)
+
+        $assetPath = $match.Groups['path'].Value
+        $version = Get-StaticAssetVersion -RelativePath $assetPath
+        if (-not $version) {
+            return $match.Value
+        }
+
+        return '{0}="{1}?v={2}"' -f $match.Groups['attr'].Value, $assetPath, $version
+    })
+}
+
 try {
     while ($listener.IsListening) {
         $context = $listener.GetContext()
@@ -283,7 +319,7 @@ try {
                 "/" {
                     $indexPath = Join-Path $staticRoot "index.html"
                     if (Test-Path $indexPath) {
-                        $content = Get-Content $indexPath -Raw
+                        $content = Add-StaticAssetVersions -Html (Get-Content $indexPath -Raw)
                     } else {
                         $statusCode = 404
                         $content = "index.html not found"
@@ -1455,6 +1491,11 @@ try {
             }
             $response.StatusCode = $statusCode
             $response.ContentType = $contentType
+            if ($url -eq "/" -or $contentType -like "text/html*") {
+                $response.Headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+                $response.Headers['Pragma'] = 'no-cache'
+                $response.Headers['Expires'] = '0'
+            }
             $buffer = [System.Text.Encoding]::UTF8.GetBytes($content)
             $response.ContentLength64 = $buffer.Length
             if ($null -ne $response.OutputStream) {
@@ -1490,4 +1531,3 @@ try {
     }
     Write-Status "Server stopped" -Type Warn
 }
-

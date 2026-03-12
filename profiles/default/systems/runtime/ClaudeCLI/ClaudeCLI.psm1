@@ -395,7 +395,7 @@ function Invoke-ClaudeStream {
     Maximum characters to show in preview messages (default: 140).
     
     .PARAMETER Model
-    Claude model to use (default: claude-opus-4-6).
+    Claude model to use (default: opus).
     
     .PARAMETER SessionId
     Optional session ID for conversation continuity.
@@ -410,7 +410,7 @@ function Invoke-ClaudeStream {
     Invoke-ClaudeStream -Prompt "What files are in the current directory?"
     
     .EXAMPLE
-    Invoke-ClaudeStream -Prompt "Analyze the code" -Model "claude-sonnet-4-20250514"
+    Invoke-ClaudeStream -Prompt "Analyze the code" -Model "sonnet"
     
     .EXAMPLE
     Invoke-ClaudeStream -Prompt "Debug this" -ShowDebugJson -ShowVerbose
@@ -421,7 +421,7 @@ function Invoke-ClaudeStream {
         [string]$Prompt,
 
         [Parameter(Position = 1)]
-        [string]$Model = "claude-opus-4-6",
+        [string]$Model = "opus",
 
         [int]$FlushChars = 200,
 
@@ -1095,7 +1095,7 @@ function Invoke-Claude {
     The prompt to send to Claude.
     
     .PARAMETER Model
-    Claude model to use (default: claude-opus-4-6).
+    Claude model to use (default: opus).
     
     .PARAMETER SessionId
     Optional session ID for conversation continuity.
@@ -1107,7 +1107,7 @@ function Invoke-Claude {
     Invoke-Claude -Prompt "What is 2+2?"
     
     .EXAMPLE
-    "Explain this code" | Invoke-Claude -Model "claude-sonnet-4-20250514"
+    "Explain this code" | Invoke-Claude -Model "sonnet"
     #>
     [CmdletBinding()]
     param(
@@ -1115,7 +1115,7 @@ function Invoke-Claude {
         [string]$Prompt,
 
         [Parameter(Position = 1)]
-        [string]$Model = "claude-opus-4-6",
+        [string]$Model = "opus",
         
         [string]$SessionId,
         
@@ -1153,19 +1153,19 @@ function Get-ClaudeModels {
     param()
     
     [PSCustomObject]@{
-        Name = "claude-opus-4-6"
+        Name = "opus"
         Description = "Most capable model"
         Alias = "opus"
     }
     [PSCustomObject]@{
-        Name = "claude-sonnet-4-20250514"
+        Name = "sonnet"
         Description = "Balanced performance"
         Alias = "sonnet"
     }
     [PSCustomObject]@{
-        Name = "claude-3-5-sonnet-20241022"
-        Description = "Previous Sonnet version"
-        Alias = "sonnet-3.5"
+        Name = "haiku"
+        Description = "Lightweight and fast"
+        Alias = "haiku"
     }
 }
 

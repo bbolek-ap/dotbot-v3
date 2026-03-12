@@ -144,7 +144,7 @@ try {
         if (Test-Path $themeModule) { Import-Module $themeModule -Force }
         Import-Module $module -Force
         # Use Haiku for cheapest E2E test
-        Invoke-ClaudeStream -Prompt $prompt -Model "claude-haiku-4-5-20251001" *>&1
+        Invoke-ClaudeStream -Prompt $prompt -Model "haiku" *>&1
     } -ArgumentList $claudeModule, $themeModule, $kickstartPrompt, $testProject
 
     $job | Wait-Job -Timeout $timeoutSeconds | Out-Null

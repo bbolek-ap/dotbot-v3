@@ -5,9 +5,9 @@
   "exec_subcommand": null,
   "prompt_flag": null,
   "models": {
-    "Opus":   { "id": "claude-opus-4-6",           "description": "Most capable model for complex reasoning", "badge": "Recommended" },
-    "Sonnet": { "id": "claude-sonnet-4-5-20250929", "description": "Balanced performance with faster response" },
-    "Haiku":  { "id": "claude-haiku-4-5-20251001",  "description": "Lightweight and fast for simple tasks" }
+    "Opus":   { "id": "opus",   "description": "Most capable model for complex reasoning", "badge": "Recommended" },
+    "Sonnet": { "id": "sonnet", "description": "Balanced performance with faster response" },
+    "Haiku":  { "id": "haiku",  "description": "Lightweight and fast for simple tasks" }
   },
   "default_model": "Opus",
   "cli_args": {

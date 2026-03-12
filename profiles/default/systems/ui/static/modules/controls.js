@@ -988,6 +988,12 @@ async function loadNotificationSettings() {
         const enabledToggle = el('notif-enabled');
         if (enabledToggle) enabledToggle.checked = !!data.enabled;
 
+        const soundEnabledToggle = el('notif-sound-enabled');
+        if (soundEnabledToggle) soundEnabledToggle.checked = !!data.sound_enabled;
+        if (typeof setNotificationSoundEnabled === 'function') {
+            setNotificationSoundEnabled(!!data.sound_enabled);
+        }
+
         const serverUrl = el('notif-server-url');
         if (serverUrl) serverUrl.value = data.server_url || '';
 
@@ -1072,6 +1078,16 @@ function initNotificationSettings() {
     if (enabledToggle) {
         enabledToggle.addEventListener('change', () => {
             saveNotificationSetting({ enabled: enabledToggle.checked });
+        });
+    }
+
+    const soundEnabledToggle = document.getElementById('notif-sound-enabled');
+    if (soundEnabledToggle) {
+        soundEnabledToggle.addEventListener('change', () => {
+            if (typeof setNotificationSoundEnabled === 'function') {
+                setNotificationSoundEnabled(soundEnabledToggle.checked);
+            }
+            saveNotificationSetting({ sound_enabled: soundEnabledToggle.checked });
         });
     }
 

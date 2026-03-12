@@ -240,7 +240,7 @@ function buildOverviewSection(task) {
             </div>`;
         }
         if (task.completed_at) {
-            const duration = task.started_at ? formatDuration(task.started_at, task.completed_at) : '';
+            const duration = formatTaskDuration(task);
             html += `<div class="task-date-item highlight">
                 <span class="task-date-label">Completed</span>
                 <span class="task-date-value">${formatFriendlyDate(task.completed_at)}${duration ? `<span class="task-duration-badge">(${duration})</span>` : ''}</span>

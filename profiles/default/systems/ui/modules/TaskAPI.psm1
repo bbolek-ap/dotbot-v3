@@ -453,7 +453,8 @@ Now create the task using mcp__dotbot__task_create with needs_interview=$NeedsIn
     $escapedPrompt = $systemPrompt -replace '"', '\"' -replace "`n", ' ' -replace "`r", ''
     # Truncate if too long for CLI args
     if ($escapedPrompt.Length -gt 8000) { $escapedPrompt = $escapedPrompt.Substring(0, 8000) }
-    $launchArgs = @("-File", "`"$launcherPath`"", "-Type", "task-creation", "-Model", "Sonnet", "-Description", "`"Create task from user request`"", "-Prompt", "`"$escapedPrompt`"")
+    # Don't pass -Model — let launch-process.ps1 resolve it from settings.default.json → ui-settings.json → provider default
+    $launchArgs = @("-File", "`"$launcherPath`"", "-Type", "task-creation", "-Description", "`"Create task from user request`"", "-Prompt", "`"$escapedPrompt`"")
     Start-Process pwsh -ArgumentList $launchArgs -WindowStyle Normal | Out-Null
     Write-Status "Task creation launched as tracked process" -Type Info
 

@@ -8,6 +8,10 @@
 
 // ========== INITIALIZATION ==========
 document.addEventListener('DOMContentLoaded', async () => {
+    if (typeof initNotificationAudio === 'function') {
+        initNotificationAudio();
+    }
+
     // Load theme first (affects all UI)
     await loadTheme();
 
@@ -64,4 +68,3 @@ window.addEventListener('beforeunload', () => {
     if (kickstartPolling) clearInterval(kickstartPolling);
     if (processPollingTimer) clearInterval(processPollingTimer);
 });
-

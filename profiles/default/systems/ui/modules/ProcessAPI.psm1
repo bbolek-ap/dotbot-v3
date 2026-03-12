@@ -306,15 +306,8 @@ function Start-ProcessLaunch {
     if ($Prompt) { $launchArgs += @("-Prompt", "`"$($Prompt -replace '"', '\"')`"") }
     if ($Continue) { $launchArgs += "-Continue" }
     if ($Description) { $launchArgs += @("-Description", "`"$($Description -replace '"', '\"')`"") }
-    # Model: from request, or from settings
-    $launchModel = if ($Model) { $Model } else {
-        switch ($Type) {
-            'analysis' { 'Opus' }
-            'workflow' { 'Opus' }
-            default    { 'Opus' }
-        }
-    }
-    $launchArgs += @("-Model", $launchModel)
+    # Only pass -Model when explicitly provided; otherwise let launch-process.ps1 resolve from settings
+    if ($Model) { $launchArgs += @("-Model", $Model) }
 
     # Check settings for debug/verbose
     $settingsFile = Join-Path $controlDir "ui-settings.json"
@@ -353,7 +346,7 @@ function Start-ProcessLaunch {
         process_id = $launchedProcId
         pid = $proc.Id
         type = $Type
-        model = $launchModel
+        model = $Model
     }
 }
 

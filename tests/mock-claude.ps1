@@ -64,7 +64,7 @@ switch ($mode) {
                 content = @(
                     @{
                         type = "text"
-                        text = "You've hit your limit for claude-opus-4-6. Your limit resets at 3:00 PM EST."
+                        text = "You've hit your limit for opus. Your limit resets at 3:00 PM EST."
                     }
                 )
             }
@@ -85,7 +85,7 @@ switch ($mode) {
         $initEvent = @{
             type    = "system"
             subtype = "init"
-            model   = "claude-opus-4-6"
+            model   = "opus"
             cwd     = (Get-Location).Path
         } | ConvertTo-Json -Compress
         Write-Output $initEvent
