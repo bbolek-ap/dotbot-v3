@@ -93,6 +93,7 @@ Import-Module (Join-Path $PSScriptRoot "modules\TaskAPI.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "modules\ProcessAPI.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "modules\StateBuilder.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "modules\NotificationPoller.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "modules\ErrorLogAPI.psm1") -Force
 
 # Initialize all domain modules
 Initialize-FileWatchers -BotRoot $botRoot
@@ -106,6 +107,7 @@ Initialize-TaskAPI -BotRoot $botRoot -ProjectRoot $projectRoot
 Initialize-ProcessAPI -ProcessesDir $processesDir -BotRoot $botRoot -ControlDir $controlDir
 Initialize-StateBuilder -BotRoot $botRoot -ControlDir $controlDir -ProcessesDir $processesDir
 Initialize-NotificationPoller -BotRoot $botRoot
+Initialize-ErrorLogAPI -ControlDir $controlDir -BotRoot $botRoot
 
 # Request counter for single-line logging
 $script:requestCount = 0
@@ -903,6 +905,41 @@ try {
                     $position = if ($request.QueryString["position"]) { [long]$request.QueryString["position"] } else { 0L }
                     $tailLines = if ($request.QueryString["tail"]) { [int]$request.QueryString["tail"] } else { 0 }
                     $content = Get-ActivityTail -Position $position -TailLines $tailLines | ConvertTo-Json -Depth 10 -Compress
+                    break
+                }
+
+                # --- Error Log ---
+
+                "/api/errors" {
+                    $contentType = "application/json; charset=utf-8"
+                    if ($method -eq "GET") {
+                        $limit = if ($request.QueryString["limit"]) { [int]$request.QueryString["limit"] } else { 50 }
+                        $offset = if ($request.QueryString["offset"]) { [int]$request.QueryString["offset"] } else { 0 }
+                        $source = $request.QueryString["source"]
+                        $level = $request.QueryString["level"]
+                        $since = $request.QueryString["since"]
+                        $content = (Get-ErrorLogEntries -Limit $limit -Offset $offset -Source $source -Level $level -Since $since) | ConvertTo-Json -Depth 10 -Compress
+                    } else {
+                        $statusCode = 405
+                        $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
+                    }
+                    break
+                }
+
+                "/api/errors/summary" {
+                    $contentType = "application/json; charset=utf-8"
+                    $content = (Get-ErrorSummary) | ConvertTo-Json -Depth 5 -Compress
+                    break
+                }
+
+                "/api/errors/clear" {
+                    $contentType = "application/json; charset=utf-8"
+                    if ($method -eq "POST") {
+                        $content = (Invoke-ClearErrorLog) | ConvertTo-Json -Compress
+                    } else {
+                        $statusCode = 405
+                        $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
+                    }
                     break
                 }
 

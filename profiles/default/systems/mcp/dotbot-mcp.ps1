@@ -54,6 +54,12 @@ if (Test-Path $tasksCheck) {
 # Load helpers
 . "$PSScriptRoot\dotbot-mcp-helpers.ps1"
 
+# Import ErrorLogger for structured error logging
+$errorLoggerPath = Join-Path (Split-Path -Parent $PSScriptRoot) "runtime\modules\ErrorLogger.psm1"
+if (Test-Path $errorLoggerPath) {
+    Import-Module $errorLoggerPath -Force
+}
+
 # Import PowerShell YAML module for proper YAML parsing
 try {
     Import-Module powershell-yaml -ErrorAction Stop
@@ -186,6 +192,9 @@ function Invoke-CallTool {
         }
     }
     catch {
+        if (Get-Command Write-ErrorLog -ErrorAction SilentlyContinue) {
+            Write-ErrorLog -Message "MCP tool '$Name' failed: $($_.Exception.Message)" -Source 'mcp-tool' -ErrorCode 'TOOL_EXEC_FAILED' -Exception $_
+        }
         throw "Tool execution failed: $_"
     }
 }
@@ -246,7 +255,11 @@ function Start-McpServerLoop {
         catch {
             $errorMessage = $_.Exception.Message
             [Console]::Error.WriteLine("Error: $errorMessage")
-            
+
+            if (Get-Command Write-ErrorLog -ErrorAction SilentlyContinue) {
+                Write-ErrorLog -Message "MCP server error: $errorMessage" -Source 'mcp-tool' -ErrorCode 'MCP_SERVER_ERROR' -Exception $_
+            }
+
             if ($null -ne $id) {
                 Write-JsonRpcError -Id $id -Code -32603 -Message $errorMessage
             }

@@ -24,6 +24,12 @@ function Initialize-StateBuilder {
     $script:Config.BotRoot = $BotRoot
     $script:Config.ControlDir = $ControlDir
     $script:Config.ProcessesDir = $ProcessesDir
+
+    # Import ErrorLogger for error summary in state
+    $errorLoggerPath = Join-Path $BotRoot "systems\runtime\modules\ErrorLogger.psm1"
+    if (Test-Path $errorLoggerPath) {
+        Import-Module $errorLoggerPath -Force
+    }
 }
 
 function Get-RoadmapOverviewDependencyMap {
@@ -613,6 +619,25 @@ function Get-BotState {
         instances = $instances
         steering = $steeringStatus
         product_docs = @(Get-ChildItem -Path (Join-Path $botRoot "workspace\product") -Filter "*.md" -File -Recurse -ErrorAction SilentlyContinue).Count
+        error_summary = $(
+            $errorSummary = $null
+            if (Get-Command Get-ErrorLogSummary -ErrorAction SilentlyContinue) {
+                $errorSummary = Get-ErrorLogSummary
+            }
+
+            if ($null -eq $errorSummary) {
+                # Fallback structure when Get-ErrorLogSummary is unavailable.
+                # Downstream consumers should rely only on these documented properties.
+                $errorSummary = @{
+                    total     = 0
+                    by_level  = @{}
+                    by_source = @{}
+                    recent    = @()
+                }
+            }
+
+            $errorSummary
+        )
     }
 
     # Cache the result

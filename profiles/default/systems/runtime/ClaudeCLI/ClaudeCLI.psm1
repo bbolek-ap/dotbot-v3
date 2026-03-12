@@ -9,6 +9,9 @@ $script:theme = Get-DotBotTheme
 # Import PathSanitizer for stripping absolute paths from activity log messages
 Import-Module (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) "systems\mcp\modules\PathSanitizer.psm1") -Force
 
+# Import ErrorLogger for structured error logging
+Import-Module "$PSScriptRoot\..\modules\ErrorLogger.psm1" -Force
+
 #region Helper Functions
 
 function Get-Timestamp {
@@ -571,7 +574,13 @@ function Invoke-ClaudeStream {
 
     $claudeProc = New-Object System.Diagnostics.Process
     $claudeProc.StartInfo = $psi
-    $claudeProc.Start() | Out-Null
+    try {
+        $claudeProc.Start() | Out-Null
+    } catch {
+        $argLen = ($cliArgs -join ' ').Length
+        try { Write-ErrorLog -Message "Failed to start claude process: $($_.Exception.Message) (args length: $argLen)" -Source 'claude-cli' -Level 'critical' -ErrorCode 'PROCESS_START_FAILED' -Exception $_ } catch {}
+        throw
+    }
 
     if ($ShowDebugJson) {
         [Console]::Error.WriteLine("$($t.Bezel)[DEBUG] claude started as PID $($claudeProc.Id)$($t.Reset)")
@@ -631,8 +640,9 @@ function Invoke-ClaudeStream {
                         
                         # Store the extracted message for caller to handle
                         $script:LastRateLimitInfo = $rateLimitText
-                        
+
                         Write-ActivityLog -Type "rate_limit" -Message $rateLimitText
+                        Write-ErrorLog -Message "Rate limit hit: $rateLimitText" -Source 'claude-cli' -Level 'warning' -ErrorCode 'RATE_LIMIT'
                         return
                     }
                 } catch {
@@ -954,6 +964,7 @@ function Invoke-ClaudeStream {
                 [Console]::Error.Flush()
             }
             Write-Debug "Error processing stream event: $($_.Exception.Message)"
+            Write-ErrorLog -Message "Stream event processing error: $($_.Exception.Message)" -Source 'claude-cli' -Level 'warning' -Exception $_
         }
     }
 
@@ -1029,6 +1040,7 @@ function Invoke-ClaudeStream {
                 [Console]::Error.Flush()
             }
             Write-Debug "Error processing stream event: $($_.Exception.Message)"
+            Write-ErrorLog -Message "Stream line processing error: $($_.Exception.Message)" -Source 'claude-cli' -Level 'warning' -Exception $_
         }
     }
 

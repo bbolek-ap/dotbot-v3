@@ -71,6 +71,11 @@ function switchContextPanel(tabId) {
         updateProductFileNav();
     }
 
+    // Fetch errors when switching to errors tab
+    if (tabId === 'errors' && typeof onErrorsTabActivated === 'function') {
+        onErrorsTabActivated();
+    }
+
     // Initialize theme selector when switching to settings tab
     if (tabId === 'settings') {
         initThemeSelector();
