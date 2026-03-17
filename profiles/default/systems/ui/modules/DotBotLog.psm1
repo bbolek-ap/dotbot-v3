@@ -154,9 +154,9 @@ function Write-LogLine {
     }
 }
 
-#region ========== Core: Write-DotBotLog ==========
+#region ========== Core: Write-BotLog ==========
 
-function Write-DotBotLog {
+function Write-BotLog {
     <#
     .SYNOPSIS
     Writes a structured log entry to the unified dotbot log.
@@ -283,11 +283,14 @@ function Read-DotBotLog {
         return @{ entries = @(); total = 0 }
     }
 
-    # Check for cleared marker
-    $clearedAfter = $null
+    # Check for cleared marker (parse to DateTimeOffset for reliable comparison)
+    $clearedDate = $null
     $clearedPath = Join-Path $logDir ".cleared"
     if (Test-Path $clearedPath) {
-        try { $clearedAfter = (Get-Content $clearedPath -Raw -ErrorAction SilentlyContinue).Trim() } catch {}
+        try {
+            $raw = (Get-Content $clearedPath -Raw -ErrorAction SilentlyContinue).Trim()
+            if ($raw) { $clearedDate = [DateTimeOffset]::Parse($raw) }
+        } catch {}
     }
 
     # Read from all log files, newest first
@@ -306,11 +309,29 @@ function Read-DotBotLog {
                 $obj = $line | ConvertFrom-Json
 
                 # Skip entries before cleared marker
-                if ($clearedAfter -and $obj.ts -le $clearedAfter) { continue }
+                # ConvertFrom-Json auto-converts ISO timestamps to DateTime (losing Z suffix),
+                # so we treat them as UTC explicitly
+                if ($clearedDate) {
+                    try {
+                        $entryDate = if ($obj.ts -is [datetime]) {
+                            [DateTimeOffset]::new($obj.ts.ToUniversalTime(), [TimeSpan]::Zero)
+                        } else {
+                            [DateTimeOffset]::Parse($obj.ts.ToString())
+                        }
+                        if ($entryDate -le $clearedDate) { continue }
+                    } catch { continue }
+                }
+
+                # Get timestamp as ISO string for UI
+                $tsString = if ($obj.ts -is [datetime]) {
+                    $obj.ts.ToUniversalTime().ToString('o')
+                } else {
+                    $obj.ts.ToString()
+                }
 
                 # Normalize to UI-compatible format
                 $uiEntry = [ordered]@{
-                    timestamp    = $obj.ts
+                    timestamp    = $tsString
                     level        = $obj.level
                     source       = if ($obj.source) { $obj.source } else { 'unknown' }
                     message      = $obj.msg
@@ -398,11 +419,14 @@ function Get-DotBotLogSummary {
         return @{ total = 0; by_level = @{}; by_source = @{}; latest_timestamp = $null }
     }
 
-    # Check for cleared marker
-    $clearedAfter = $null
+    # Check for cleared marker (parse to DateTimeOffset for reliable comparison)
+    $clearedDate = $null
     $clearedPath = Join-Path $logDir ".cleared"
     if (Test-Path $clearedPath) {
-        try { $clearedAfter = (Get-Content $clearedPath -Raw -ErrorAction SilentlyContinue).Trim() } catch {}
+        try {
+            $raw = (Get-Content $clearedPath -Raw -ErrorAction SilentlyContinue).Trim()
+            if ($raw) { $clearedDate = [DateTimeOffset]::Parse($raw) }
+        } catch {}
     }
 
     $byLevel = @{}
@@ -422,7 +446,16 @@ function Get-DotBotLogSummary {
                 $obj = $line | ConvertFrom-Json
 
                 # Skip entries before cleared marker
-                if ($clearedAfter -and $obj.ts -le $clearedAfter) { continue }
+                if ($clearedDate) {
+                    try {
+                        $entryDate = if ($obj.ts -is [datetime]) {
+                            [DateTimeOffset]::new($obj.ts.ToUniversalTime(), [TimeSpan]::Zero)
+                        } else {
+                            [DateTimeOffset]::Parse($obj.ts.ToString())
+                        }
+                        if ($entryDate -le $clearedDate) { continue }
+                    } catch { continue }
+                }
 
                 $total++
 
@@ -467,7 +500,7 @@ function Invoke-DotBotLogRotation {
 
 Export-ModuleMember -Function @(
     'Initialize-DotBotLog',
-    'Write-DotBotLog',
+    'Write-BotLog',
     'Read-DotBotLog',
     'Clear-DotBotLog',
     'Get-DotBotLogSummary',

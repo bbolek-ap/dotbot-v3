@@ -192,8 +192,8 @@ function Invoke-CallTool {
         }
     }
     catch {
-        if (Get-Command Write-DotBotLog -ErrorAction SilentlyContinue) {
-            Write-DotBotLog -Level Error -Message "MCP tool '$Name' failed: $($_.Exception.Message)" -Context @{ source = 'mcp-tool'; error_code = 'TOOL_EXEC_FAILED' } -Exception $_
+        if (Get-Command Write-BotLog -ErrorAction SilentlyContinue) {
+            Write-BotLog -Level Error -Message "MCP tool '$Name' failed: $($_.Exception.Message)" -Context @{ source = 'mcp-tool'; error_code = 'TOOL_EXEC_FAILED' } -Exception $_
         }
         throw "Tool execution failed: $_"
     }
@@ -256,8 +256,8 @@ function Start-McpServerLoop {
             $errorMessage = $_.Exception.Message
             [Console]::Error.WriteLine("Error: $errorMessage")
 
-            if (Get-Command Write-DotBotLog -ErrorAction SilentlyContinue) {
-                Write-DotBotLog -Level Error -Message "MCP server error: $errorMessage" -Context @{ source = 'mcp-tool'; error_code = 'MCP_SERVER_ERROR' } -Exception $_
+            if (Get-Command Write-BotLog -ErrorAction SilentlyContinue) {
+                Write-BotLog -Level Error -Message "MCP server error: $errorMessage" -Context @{ source = 'mcp-tool'; error_code = 'MCP_SERVER_ERROR' } -Exception $_
             }
 
             if ($null -ne $id) {

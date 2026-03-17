@@ -157,7 +157,7 @@ function New-EnvelopeResponse {
     if ($Actions) { $response.actions = $Actions }
 
     # Log errors to structured error log
-    if ($Errors.Count -gt 0 -and (Get-Command Write-DotBotLog -ErrorAction SilentlyContinue)) {
+    if ($Errors.Count -gt 0 -and (Get-Command Write-BotLog -ErrorAction SilentlyContinue)) {
         foreach ($err in $Errors) {
             # Normalize error objects: support hashtables with 'message'/'code' keys,
             # objects with message/code properties, and generic objects via ToString().
@@ -194,7 +194,7 @@ function New-EnvelopeResponse {
             if (-not $errCode) {
                 $errCode = 'TOOL_ERROR'
             }
-            Write-DotBotLog -Level Error -Message "Tool '$Tool' error: $errMsg" -Context @{ source = 'mcp-tool'; error_code = $errCode }
+            Write-BotLog -Level Error -Message "Tool '$Tool' error: $errMsg" -Context @{ source = 'mcp-tool'; error_code = $errCode }
         }
     }
 
