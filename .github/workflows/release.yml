@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 env:
-  ARCHIVE_PREFIX: dotbot-v3
+  ARCHIVE_PREFIX: dotbot
 
 jobs:
   # ── Gate: run tests before releasing ────────────────────────
@@ -169,8 +169,8 @@ jobs:
           $hash = "${{ needs.release.outputs.sha256_zip }}"
           $manifest = Get-Content bucket/dotbot.json | ConvertFrom-Json
           $manifest.version = $version
-          $manifest.url = "https://github.com/andresharpe/dotbot-v3/releases/download/v${version}/dotbot-v3-${version}.zip"
-          $manifest.extract_dir = "dotbot-v3-${version}"
+          $manifest.url = "https://github.com/andresharpe/dotbot/releases/download/v${version}/dotbot-${version}.zip"
+          $manifest.extract_dir = "dotbot-${version}"
           $manifest.hash = $hash
           $manifest | ConvertTo-Json -Depth 10 | Set-Content bucket/dotbot.json
 
@@ -199,7 +199,7 @@ jobs:
         run: |
           VERSION="${{ needs.release.outputs.version }}"
           SHA="${{ needs.release.outputs.sha256_tar }}"
-          sed -i "s|url \".*\"|url \"https://github.com/andresharpe/dotbot-v3/releases/download/v${VERSION}/dotbot-v3-${VERSION}.tar.gz\"|" Formula/dotbot.rb
+          sed -i "s|url \".*\"|url \"https://github.com/andresharpe/dotbot/releases/download/v${VERSION}/dotbot-${VERSION}.tar.gz\"|" Formula/dotbot.rb
           sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" Formula/dotbot.rb
           # Update version in desc if present
           sed -i "s|version \".*\"|version \"${VERSION}\"|" Formula/dotbot.rb 2>/dev/null || true

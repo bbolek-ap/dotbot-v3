@@ -1,13 +1,13 @@
 {
     "version": "3.1.0",
     "description": "Structured AI-assisted development framework with two-phase execution and web dashboard",
-    "homepage": "https://github.com/andresharpe/dotbot-v3",
+    "homepage": "https://github.com/andresharpe/dotbot",
     "license": "MIT",
-    "url": "https://github.com/andresharpe/dotbot-v3/releases/download/v3.1.0/dotbot-v3-3.1.0.zip",
+    "url": "https://github.com/andresharpe/dotbot/releases/download/v3.1.0/dotbot-3.1.0.zip",
     "hash": {
-        "url": "https://github.com/andresharpe/dotbot-v3/releases/download/v3.1.0/dotbot-v3-3.1.0.zip.sha256"
+        "url": "https://github.com/andresharpe/dotbot/releases/download/v3.1.0/dotbot-3.1.0.zip.sha256"
     },
-    "extract_dir": "dotbot-v3-3.1.0",
+    "extract_dir": "dotbot-3.1.0",
     "suggest": {
         "PowerShell 7+": "pwsh"
     },
@@ -22,11 +22,11 @@
         ]
     },
     "checkver": {
-        "github": "https://github.com/andresharpe/dotbot-v3"
+        "github": "https://github.com/andresharpe/dotbot"
     },
     "autoupdate": {
-        "url": "https://github.com/andresharpe/dotbot-v3/releases/download/v$version/dotbot-v3-$version.zip",
-        "extract_dir": "dotbot-v3-$version",
+        "url": "https://github.com/andresharpe/dotbot/releases/download/v$version/dotbot-$version.zip",
+        "extract_dir": "dotbot-$version",
         "hash": {
             "url": "$url.sha256"
         }
