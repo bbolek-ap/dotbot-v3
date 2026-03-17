@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Layer 2: Component tests for dotbot-v3 MCP tools and modules.
+    Layer 2: Component tests for dotbot MCP tools and modules.
 .DESCRIPTION
     Tests MCP server boot, task lifecycle, validation, session tracking,
     and activity logging. No AI/Claude dependency required.
@@ -238,7 +238,7 @@ try {
 
         # Check key tools exist
         $toolNames = $listResponse.result.tools | ForEach-Object { $_.name }
-        $expectedTools = @('task_create', 'task_get_next', 'task_mark_in_progress', 'task_mark_done', 'task_list', 'task_get_stats', 'session_initialize')
+        $expectedTools = @('task_create', 'task_get_next', 'task_mark_in_progress', 'task_mark_done', 'task_list', 'task_get_stats', 'session_initialize', 'decision_create', 'decision_get', 'decision_list', 'decision_update', 'decision_mark_accepted', 'decision_mark_deprecated', 'decision_mark_superseded')
         foreach ($tool in $expectedTools) {
             Assert-True -Name "Tool '$tool' registered" `
                 -Condition ($tool -in $toolNames) `
@@ -465,6 +465,320 @@ try {
         Assert-True -Name "task_get_stats returns counts" `
             -Condition ($statsObj.success -eq $true -and $null -ne $statsObj.total_tasks) `
             -Message "No count data: $statsText"
+    }
+
+    Write-Host ""
+
+    # ═══════════════════════════════════════════════════════════════════
+    # DECISION LIFECYCLE
+    # ═══════════════════════════════════════════════════════════════════
+
+    Write-Host "  DECISION LIFECYCLE" -ForegroundColor Cyan
+    Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+    # Create a decision
+    $requestId++
+    $decCreateResponse = Send-McpRequest -Process $mcpProcess -Request @{
+        jsonrpc = '2.0'
+        id      = $requestId
+        method  = 'tools/call'
+        params  = @{
+            name      = 'decision_create'
+            arguments = @{
+                title   = 'Use PowerShell for MCP Server'
+                context = 'We need a language for the MCP server implementation'
+                decision = 'Use PowerShell 7+ as the sole implementation language'
+                type    = 'architecture'
+                impact  = 'high'
+                consequences = 'Limited to PowerShell ecosystem'
+            }
+        }
+    }
+
+    Assert-True -Name "decision_create responds" `
+        -Condition ($null -ne $decCreateResponse) `
+        -Message "No response"
+
+    $decId = $null
+    if ($decCreateResponse -and $decCreateResponse.result) {
+        $decText = $decCreateResponse.result.content[0].text
+        $decObj = $decText | ConvertFrom-Json
+        Assert-True -Name "decision_create returns success" `
+            -Condition ($decObj.success -eq $true) `
+            -Message "success was not true: $decText"
+        $decId = $decObj.decision_id
+        Assert-True -Name "decision_create returns decision_id" `
+            -Condition ($null -ne $decId -and $decId.Length -gt 0) `
+            -Message "No decision_id in response"
+    }
+
+    # Verify decision file exists in proposed/
+    if ($decId) {
+        $proposedDir = Join-Path $botDir "workspace\decisions\proposed"
+        $proposedFiles = Get-ChildItem -Path $proposedDir -Filter "*.json" -ErrorAction SilentlyContinue
+        Assert-True -Name "Decision file created in proposed/" `
+            -Condition ($proposedFiles.Count -gt 0) `
+            -Message "No .json files found in proposed/"
+    }
+
+    # List decisions
+    $requestId++
+    $decListResponse = Send-McpRequest -Process $mcpProcess -Request @{
+        jsonrpc = '2.0'
+        id      = $requestId
+        method  = 'tools/call'
+        params  = @{
+            name      = 'decision_list'
+            arguments = @{}
+        }
+    }
+
+    Assert-True -Name "decision_list responds" `
+        -Condition ($null -ne $decListResponse) `
+        -Message "No response"
+
+    if ($decListResponse -and $decListResponse.result) {
+        $decListText = $decListResponse.result.content[0].text
+        $decListObj = $decListText | ConvertFrom-Json
+        $decCount = if ($decListObj.decisions) { $decListObj.decisions.Count } else { 0 }
+        Assert-True -Name "decision_list shows created decision" `
+            -Condition ($decListObj.success -eq $true -and $decCount -gt 0) `
+            -Message "No decisions found: $decListText"
+    }
+
+    # Get decision
+    if ($decId) {
+        $requestId++
+        $decGetResponse = Send-McpRequest -Process $mcpProcess -Request @{
+            jsonrpc = '2.0'
+            id      = $requestId
+            method  = 'tools/call'
+            params  = @{
+                name      = 'decision_get'
+                arguments = @{ decision_id = $decId }
+            }
+        }
+
+        Assert-True -Name "decision_get responds" `
+            -Condition ($null -ne $decGetResponse) `
+            -Message "No response"
+
+        if ($decGetResponse -and $decGetResponse.result) {
+            $decGetText = $decGetResponse.result.content[0].text
+            $decGetObj = $decGetText | ConvertFrom-Json
+            Assert-True -Name "decision_get returns success" `
+                -Condition ($decGetObj.success -eq $true) `
+                -Message "Failed: $decGetText"
+            Assert-True -Name "decision_get returns correct title" `
+                -Condition ($decGetObj.title -eq 'Use PowerShell for MCP Server') `
+                -Message "Wrong title: $($decGetObj.title)"
+        }
+    }
+
+    # Update decision
+    if ($decId) {
+        $requestId++
+        $decUpdateResponse = Send-McpRequest -Process $mcpProcess -Request @{
+            jsonrpc = '2.0'
+            id      = $requestId
+            method  = 'tools/call'
+            params  = @{
+                name      = 'decision_update'
+                arguments = @{
+                    decision_id = $decId
+                    consequences = 'Limited to PowerShell ecosystem but mitigated by cross-platform pwsh'
+                }
+            }
+        }
+
+        Assert-True -Name "decision_update responds" `
+            -Condition ($null -ne $decUpdateResponse) `
+            -Message "No response"
+
+        if ($decUpdateResponse -and $decUpdateResponse.result) {
+            $decUpdateText = $decUpdateResponse.result.content[0].text
+            $decUpdateObj = $decUpdateText | ConvertFrom-Json
+            Assert-True -Name "decision_update succeeds" `
+                -Condition ($decUpdateObj.success -eq $true) `
+                -Message "Failed: $decUpdateText"
+        }
+    }
+
+    # Mark accepted
+    if ($decId) {
+        $requestId++
+        $decAcceptResponse = Send-McpRequest -Process $mcpProcess -Request @{
+            jsonrpc = '2.0'
+            id      = $requestId
+            method  = 'tools/call'
+            params  = @{
+                name      = 'decision_mark_accepted'
+                arguments = @{ decision_id = $decId }
+            }
+        }
+
+        Assert-True -Name "decision_mark_accepted responds" `
+            -Condition ($null -ne $decAcceptResponse) `
+            -Message "No response"
+
+        if ($decAcceptResponse -and $decAcceptResponse.result) {
+            $decAcceptText = $decAcceptResponse.result.content[0].text
+            $decAcceptObj = $decAcceptText | ConvertFrom-Json
+            Assert-True -Name "decision_mark_accepted succeeds" `
+                -Condition ($decAcceptObj.success -eq $true) `
+                -Message "Failed: $decAcceptText"
+        }
+
+        # Verify file moved to accepted/
+        $acceptedDir = Join-Path $botDir "workspace\decisions\accepted"
+        $acceptedFiles = Get-ChildItem -Path $acceptedDir -Filter "*.json" -ErrorAction SilentlyContinue
+        Assert-True -Name "Decision file moved to accepted/" `
+            -Condition ($acceptedFiles.Count -gt 0) `
+            -Message "No .json files found in accepted/"
+    }
+
+    # Create a second decision to test superseded
+    $requestId++
+    $dec2CreateResponse = Send-McpRequest -Process $mcpProcess -Request @{
+        jsonrpc = '2.0'
+        id      = $requestId
+        method  = 'tools/call'
+        params  = @{
+            name      = 'decision_create'
+            arguments = @{
+                title    = 'Switch to TypeScript for MCP'
+                context  = 'Performance concerns with PowerShell approach'
+                decision = 'Migrate MCP server to TypeScript'
+                status   = 'accepted'
+            }
+        }
+    }
+
+    $dec2Id = $null
+    if ($dec2CreateResponse -and $dec2CreateResponse.result) {
+        $dec2Text = $dec2CreateResponse.result.content[0].text
+        $dec2Obj = $dec2Text | ConvertFrom-Json
+        $dec2Id = $dec2Obj.decision_id
+    }
+
+    # Mark first decision as superseded by second
+    if ($decId -and $dec2Id) {
+        $requestId++
+        $decSuperResponse = Send-McpRequest -Process $mcpProcess -Request @{
+            jsonrpc = '2.0'
+            id      = $requestId
+            method  = 'tools/call'
+            params  = @{
+                name      = 'decision_mark_superseded'
+                arguments = @{
+                    decision_id   = $decId
+                    superseded_by = $dec2Id
+                }
+            }
+        }
+
+        Assert-True -Name "decision_mark_superseded responds" `
+            -Condition ($null -ne $decSuperResponse) `
+            -Message "No response"
+
+        if ($decSuperResponse -and $decSuperResponse.result) {
+            $decSuperText = $decSuperResponse.result.content[0].text
+            $decSuperObj = $decSuperText | ConvertFrom-Json
+            Assert-True -Name "decision_mark_superseded succeeds" `
+                -Condition ($decSuperObj.success -eq $true) `
+                -Message "Failed: $decSuperText"
+        }
+
+        # Verify file moved to superseded/
+        $supersededDir = Join-Path $botDir "workspace\decisions\superseded"
+        $supersededFiles = Get-ChildItem -Path $supersededDir -Filter "*.json" -ErrorAction SilentlyContinue
+        Assert-True -Name "Decision file moved to superseded/" `
+            -Condition ($supersededFiles.Count -gt 0) `
+            -Message "No .json files found in superseded/"
+    }
+
+    # Create a third decision to test deprecated
+    $requestId++
+    $dec3CreateResponse = Send-McpRequest -Process $mcpProcess -Request @{
+        jsonrpc = '2.0'
+        id      = $requestId
+        method  = 'tools/call'
+        params  = @{
+            name      = 'decision_create'
+            arguments = @{
+                title    = 'Use Redis for Caching'
+                context  = 'Need caching layer for performance'
+                decision = 'Use Redis as the caching backend'
+                status   = 'accepted'
+            }
+        }
+    }
+
+    $dec3Id = $null
+    if ($dec3CreateResponse -and $dec3CreateResponse.result) {
+        $dec3Text = $dec3CreateResponse.result.content[0].text
+        $dec3Obj = $dec3Text | ConvertFrom-Json
+        $dec3Id = $dec3Obj.decision_id
+    }
+
+    # Mark deprecated
+    if ($dec3Id) {
+        $requestId++
+        $decDepResponse = Send-McpRequest -Process $mcpProcess -Request @{
+            jsonrpc = '2.0'
+            id      = $requestId
+            method  = 'tools/call'
+            params  = @{
+                name      = 'decision_mark_deprecated'
+                arguments = @{
+                    decision_id = $dec3Id
+                    reason = 'Caching no longer needed after architecture simplification'
+                }
+            }
+        }
+
+        Assert-True -Name "decision_mark_deprecated responds" `
+            -Condition ($null -ne $decDepResponse) `
+            -Message "No response"
+
+        if ($decDepResponse -and $decDepResponse.result) {
+            $decDepText = $decDepResponse.result.content[0].text
+            $decDepObj = $decDepText | ConvertFrom-Json
+            Assert-True -Name "decision_mark_deprecated succeeds" `
+                -Condition ($decDepObj.success -eq $true) `
+                -Message "Failed: $decDepText"
+        }
+
+        # Verify file moved to deprecated/
+        $deprecatedDir = Join-Path $botDir "workspace\decisions\deprecated"
+        $deprecatedFiles = Get-ChildItem -Path $deprecatedDir -Filter "*.json" -ErrorAction SilentlyContinue
+        Assert-True -Name "Decision file moved to deprecated/" `
+            -Condition ($deprecatedFiles.Count -gt 0) `
+            -Message "No .json files found in deprecated/"
+    }
+
+    # List with status filter
+    $requestId++
+    $decListFilteredResponse = Send-McpRequest -Process $mcpProcess -Request @{
+        jsonrpc = '2.0'
+        id      = $requestId
+        method  = 'tools/call'
+        params  = @{
+            name      = 'decision_list'
+            arguments = @{ status = 'accepted' }
+        }
+    }
+
+    Assert-True -Name "decision_list with status filter responds" `
+        -Condition ($null -ne $decListFilteredResponse) `
+        -Message "No response"
+
+    if ($decListFilteredResponse -and $decListFilteredResponse.result) {
+        $decFilterText = $decListFilteredResponse.result.content[0].text
+        $decFilterObj = $decFilterText | ConvertFrom-Json
+        Assert-True -Name "decision_list filters by status" `
+            -Condition ($decFilterObj.success -eq $true) `
+            -Message "Failed: $decFilterText"
     }
 
     Write-Host ""

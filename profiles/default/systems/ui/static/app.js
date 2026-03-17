@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await initKickstart();
     initErrors();
     initNotifications();
+    await initDecisions();
 
     // Initialize Aether (ambient feedback)
     Aether.init().then(result => {

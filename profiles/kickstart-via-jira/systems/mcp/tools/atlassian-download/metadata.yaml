@@ -8,7 +8,7 @@ inputSchema:
   properties:
     jira_key:
       type: string
-      description: "Jira issue key (e.g., BS-9817). Will also scan child issues and linked Confluence pages."
+      description: "Jira issue key (e.g., PROJ-1234). Will also scan child issues and linked Confluence pages."
     target_dir:
       type: string
       description: "Target directory relative to project root (default: .bot/workspace/product/briefing/docs)"
@@ -18,4 +18,4 @@ inputSchema:
 examples:
   - description: Download all attachments for a Jira issue
     input:
-      jira_key: BS-9817
+      jira_key: PROJ-1234

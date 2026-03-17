@@ -8,15 +8,15 @@ inputSchema:
   properties:
     project:
       type: string
-      description: Azure DevOps project name (e.g., "Titan", "CountryOnboarding")
+      description: Azure DevOps project name (e.g., "Platform", "Services")
     repo:
       type: string
-      description: Repository name (e.g., "EInvoiceUpload")
+      description: Repository name (e.g., "OrderService")
   required: [project, repo]
   additionalProperties: false
 
 examples:
-  - description: Clone a repo from the Titan project
+  - description: Clone a repo from the Platform project
     input:
-      project: Titan
-      repo: EInvoiceUpload
+      project: Platform
+      repo: OrderService

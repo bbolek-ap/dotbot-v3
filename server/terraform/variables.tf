@@ -158,8 +158,32 @@ variable "log_analytics_sku" {
   default     = "PerGB2018"
 }
 
+variable "developer_name" {
+  description = "Developer/organisation name for Teams app manifest"
+  type        = string
+  default     = "Dotbot"
+}
+
+variable "developer_website_url" {
+  description = "Developer website URL for Teams app manifest"
+  type        = string
+  default     = ""
+}
+
+variable "developer_privacy_url" {
+  description = "Developer privacy policy URL for Teams app manifest"
+  type        = string
+  default     = ""
+}
+
+variable "developer_terms_url" {
+  description = "Developer terms of use URL for Teams app manifest"
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
-  description = "Resource tags following IWG standards"
+  description = "Resource tags"
   type        = map(string)
   # Set Application_Owner and System_Owner in terraform.tfvars
   default = {
@@ -172,7 +196,7 @@ variable "tags" {
     Deployed_By          = "Infra_terraform"
     Environment          = "TEST"
     Incident_Severity    = "n/a"
-    Managed_By           = "IWG"
+    Managed_By           = ""
     Purpose              = "Teams_Bot_PoC"
     SLA_Tier             = "NoSLA"
     Status               = "PoC"

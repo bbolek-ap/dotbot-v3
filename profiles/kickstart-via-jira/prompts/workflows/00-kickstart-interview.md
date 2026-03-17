@@ -10,7 +10,7 @@ You are initializing a multi-repo initiative. You will auto-resolve the initiati
 
 ## Context Provided
 
-- **User's prompt**: A short description containing a Jira key (e.g., "BS-9817 Pakistan E-Invoicing")
+- **User's prompt**: A short description containing a Jira key (e.g., "PROJ-1234 Payment Gateway Upgrade")
 - **Briefing files**: Any attached reference materials
 
 ## Your Task

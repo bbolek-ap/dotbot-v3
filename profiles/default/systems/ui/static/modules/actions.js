@@ -6,6 +6,7 @@
 // State for action items
 let actionItems = [];
 let selectedAnswers = {};  // { taskId: [selectedKeys] }
+let actionWidgetSuppressUntil = 0;
 
 /**
  * Initialize action-required functionality
@@ -190,12 +191,14 @@ function showSignalFeedback(message, type) {
  * Update action widget visibility and count
  * @param {number} count - Number of action-required items
  */
-function updateActionWidget(count) {
+function updateActionWidget(count, { fromPoll = false } = {}) {
+    if (fromPoll && Date.now() < actionWidgetSuppressUntil) return;
+
     const widget = document.getElementById('action-widget');
     const countEl = document.getElementById('action-widget-count');
-    
+
     if (!widget) return;
-    
+
     if (count > 0) {
         widget.classList.remove('hidden');
         if (countEl) countEl.textContent = count;
@@ -491,16 +494,17 @@ function attachActionHandlers(container) {
                     // Remove the answered item from UI
                     actionItem.remove();
                     delete selectedAnswers[taskId];
-                    
-                    // Update widget count
+
+                    // Update widget count and suppress poll updates to prevent flicker
                     const remaining = document.querySelectorAll('.action-item').length;
                     updateActionWidget(remaining);
-                    
+                    actionWidgetSuppressUntil = Date.now() + 4000;
+
                     if (remaining === 0) {
-                        document.getElementById('slideout-content').innerHTML = 
+                        document.getElementById('slideout-content').innerHTML =
                             '<div class="empty-state">No pending actions</div>';
                     }
-                    
+
                     // Trigger state refresh
                     if (typeof pollState === 'function') {
                         pollState();
@@ -782,6 +786,7 @@ async function handleInterviewSubmit(btn, skipped) {
                 actionItem.remove();
                 const remaining = document.querySelectorAll('.action-item').length;
                 updateActionWidget(remaining);
+                actionWidgetSuppressUntil = Date.now() + 4000;
                 if (remaining === 0) {
                     document.getElementById('slideout-content').innerHTML =
                         '<div class="empty-state">No pending actions</div>';
@@ -821,6 +826,7 @@ async function handleInterviewSubmit(btn, skipped) {
                 actionItem.remove();
                 const remaining = document.querySelectorAll('.action-item').length;
                 updateActionWidget(remaining);
+                actionWidgetSuppressUntil = Date.now() + 4000;
                 if (remaining === 0) {
                     document.getElementById('slideout-content').innerHTML =
                         '<div class="empty-state">No pending actions</div>';
@@ -864,11 +870,12 @@ async function handleSplitAction(btn, approved) {
         if (result.success) {
             // Remove the item from UI
             actionItem.remove();
-            
-            // Update widget count
+
+            // Update widget count and suppress poll updates to prevent flicker
             const remaining = document.querySelectorAll('.action-item').length;
             updateActionWidget(remaining);
-            
+            actionWidgetSuppressUntil = Date.now() + 4000;
+
             if (remaining === 0) {
                 document.getElementById('slideout-content').innerHTML = 
                     '<div class="empty-state">No pending actions</div>';

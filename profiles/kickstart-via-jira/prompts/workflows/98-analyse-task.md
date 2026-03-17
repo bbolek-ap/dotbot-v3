@@ -102,8 +102,8 @@ Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
 ```
 
 Extract from `jira-context.md`:
-- **Jira Key** (e.g., `BS-9817`)
-- **Initiative Name** (e.g., `Pakistan E-Invoicing`)
+- **Jira Key** (e.g., `PROJ-1234`)
+- **Initiative Name** (e.g., `Payment Gateway Upgrade`)
 - **Business Objective**
 - **Parent Programme**
 - **Reference Implementation** (if identified)
@@ -145,7 +145,7 @@ Only load what exists and is relevant to this task's methodology.
 
 Check if the task has a `working_dir` field:
 
-- If `working_dir` is set (e.g., `repos/EInvoiceUpload`): the execution phase should operate in that directory relative to the project root
+- If `working_dir` is set (e.g., `repos/OrderService`): the execution phase should operate in that directory relative to the project root
 - If not set: the execution phase operates in the project root as normal
 
 For deep dive tasks with `external_repo` field:
@@ -206,6 +206,57 @@ If the task has a `working_dir` field, include it in the analysis output so the 
 ### Addition 3: Research Outputs as Context
 
 If research outputs exist in `.bot/workspace/product/briefing/`, reference relevant ones in the product context. Don't read them all — only those that are relevant to the specific task being analysed.
+
+### Addition 4: Environment Pre-flight (before Phase 3)
+
+Before file discovery, verify the build environment in the task's `working_dir` (or project root). This applies to implementation tasks only (not research tasks).
+
+#### 4a. Git working tree state
+
+Run `git status --porcelain` in the working directory. Document any unexpected changes in `implementation.pre_existing_changes`. On Windows, check `git config core.longpaths` — if not `true`, note as a risk for repos with deep paths.
+
+#### 4b. Detect tech stack and invoke pre-flight skill
+
+Detect the project's build system by checking for marker files:
+
+| Marker file | Tech stack |
+|-------------|-----------|
+| `*.sln` or `*.csproj` | dotnet |
+| `package.json` | node |
+| `pom.xml` or `build.gradle` | java |
+| `requirements.txt` or `pyproject.toml` | python |
+
+Then check if a matching pre-flight skill exists:
+
+```
+Glob({ pattern: ".bot/prompts/skills/tech-preflight-{detected-tech}/SKILL.md" })
+```
+
+If found, read and follow the skill's instructions. The skill will handle:
+- SDK/runtime compatibility checks
+- Project dependency graph mapping
+- Baseline build snapshot
+- Architecture constraint identification
+
+If no matching skill exists, perform a generic baseline:
+- Attempt to run the project's standard build command (if identifiable)
+- Record pass/fail and any error output
+
+#### 4c. Include findings in analysis output
+
+Add an `environment` key to the `task_mark_analysed` call:
+```json
+{
+  "environment": {
+    "tech_stack": "dotnet",
+    "pre_existing_changes": "...",
+    "git_longpaths": true,
+    "sdk_gaps": [],
+    "dependency_graph": {},
+    "baseline_build": { "status": "pass", "error_count": 0, "warning_count": 42, "pre_existing_errors": [] }
+  }
+}
+```
 
 ### Default Phases (1-10)
 

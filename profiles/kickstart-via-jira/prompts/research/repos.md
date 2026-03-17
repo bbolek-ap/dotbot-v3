@@ -58,7 +58,7 @@ Before scanning repositories, derive search terms from the initiative context an
 
 **P2 — Domain-Specific Names** (high signal, low noise)
 - Third-party provider names (e.g., "Edicom", "FBR", "Avalara")
-- Domain-specific technical terms (e.g., "EInvoice", "ClearanceTax", "SII")
+- Domain-specific technical terms (e.g., "PaymentGateway", "RefundPolicy", "SettlementBatch")
 - Named system components, service names, or API endpoint paths from the briefing
 
 **P3 — Reference Implementation Patterns** (find where parallel changes are needed)
@@ -72,7 +72,7 @@ Before scanning repositories, derive search terms from the initiative context an
 - ISO standard codes relevant to the initiative
 
 **P5 — Broad Terms** (use only to fill gaps, expect noise)
-- Full country or region names (e.g., "Pakistan", "Saudi Arabia")
+- Full country or region names (e.g., "Germany", "Brazil")
 - Generic domain words (e.g., "invoice", "tax", "compliance")
 - Use these ONLY if P1-P4 searches have not yet surfaced a repository you have reason to believe exists
 
@@ -86,7 +86,7 @@ Before scanning repositories, derive search terms from the initiative context an
 
 If a search term returns excessive matches (100+ results):
 1. **Do not save the raw results to a file** — process them in the current turn
-2. **Combine the broad term with a narrower qualifier** (e.g., search `Pakistan AND provider` instead of `Pakistan`)
+2. **Combine the broad term with a narrower qualifier** (e.g., search `Germany AND provider` instead of `Germany`)
 3. **Filter by file path or repository** if Sourcebot supports it
 4. **Skip the term** if the repositories it matches are already covered by earlier, more specific searches
 

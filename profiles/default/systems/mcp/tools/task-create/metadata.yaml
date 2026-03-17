@@ -47,6 +47,11 @@ inputSchema:
       description: List of agent persona file paths to read before implementing (e.g., .bot/agents/backend-developer.md)
       items:
         type: string
+    applicable_decisions:
+      type: array
+      description: List of Decision IDs that constrain this task (e.g., ["dec-a1b2c3d4", "dec-e5f6a7b8"])
+      items:
+        type: string
     needs_interview:
       type: boolean
       description: If true, the analysis phase should interview the user to clarify requirements before finalizing the task

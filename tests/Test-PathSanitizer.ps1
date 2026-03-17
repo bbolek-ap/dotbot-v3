@@ -33,10 +33,10 @@ Import-Module $modulePath -Force
 Write-Host "  NULL / EMPTY" -ForegroundColor Cyan
 Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
 
-$result = Remove-AbsolutePaths -Text $null -ProjectRoot "C:\Users\andre\repos\myproject"
+$result = Remove-AbsolutePaths -Text $null -ProjectRoot "C:\Users\testuser\repos\myproject"
 Assert-True -Name "Null input returns null" -Condition ($null -eq $result -or $result -eq "") -Message "Got: '$result'"
 
-$result = Remove-AbsolutePaths -Text "" -ProjectRoot "C:\Users\andre\repos\myproject"
+$result = Remove-AbsolutePaths -Text "" -ProjectRoot "C:\Users\testuser\repos\myproject"
 Assert-True -Name "Empty input returns empty" -Condition ($result -eq "") -Message "Got: '$result'"
 
 $result = Remove-AbsolutePaths -Text "hello world" -ProjectRoot ""
@@ -51,25 +51,25 @@ Write-Host ""
 Write-Host "  PROJECT ROOT (WINDOWS)" -ForegroundColor Cyan
 Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
 
-$projectRoot = "C:\Users\andre\repos\BS-9817-TEST"
+$projectRoot = "C:\Users\testuser\repos\my-project"
 
 # Native backslash path
-$result = Remove-AbsolutePaths -Text "Reading C:\Users\andre\repos\BS-9817-TEST\.bot\workspace\tasks\todo\task.json" -ProjectRoot $projectRoot
+$result = Remove-AbsolutePaths -Text "Reading C:\Users\testuser\repos\my-project\.bot\workspace\tasks\todo\task.json" -ProjectRoot $projectRoot
 Assert-Equal -Name "Windows backslash project root replaced" `
     -Expected "Reading .\.bot\workspace\tasks\todo\task.json" -Actual $result
 
 # Forward-slash variant
-$result = Remove-AbsolutePaths -Text "cd C:/Users/andre/repos/BS-9817-TEST && git status" -ProjectRoot $projectRoot
+$result = Remove-AbsolutePaths -Text "cd C:/Users/testuser/repos/my-project && git status" -ProjectRoot $projectRoot
 Assert-Equal -Name "Forward-slash project root replaced" `
     -Expected "cd . && git status" -Actual $result
 
 # Git-bash style /c/Users/...
-$result = Remove-AbsolutePaths -Text "cd /c/Users/andre/repos/BS-9817-TEST && git add ." -ProjectRoot $projectRoot
+$result = Remove-AbsolutePaths -Text "cd /c/Users/testuser/repos/my-project && git add ." -ProjectRoot $projectRoot
 Assert-Equal -Name "Git-bash /c/ project root replaced" `
     -Expected "cd . && git add ." -Actual $result
 
 # JSON-escaped double backslash
-$result = Remove-AbsolutePaths -Text "path=C:\\Users\\andre\\repos\\BS-9817-TEST\\.bot" -ProjectRoot $projectRoot
+$result = Remove-AbsolutePaths -Text "path=C:\\Users\\testuser\\repos\\my-project\\.bot" -ProjectRoot $projectRoot
 Assert-Equal -Name "JSON-escaped double backslash project root replaced" `
     -Expected "path=.\\.bot" -Actual $result
 
@@ -82,7 +82,7 @@ Write-Host ""
 Write-Host "  SAFETY NET (WINDOWS)" -ForegroundColor Cyan
 Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
 
-$result = Remove-AbsolutePaths -Text "C:\Users\andre\.claude\projects\cache.txt" -ProjectRoot $projectRoot
+$result = Remove-AbsolutePaths -Text "C:\Users\testuser\.claude\projects\cache.txt" -ProjectRoot $projectRoot
 Assert-Equal -Name "Windows path outside project root redacted" `
     -Expected "<REDACTED>\.claude\projects\cache.txt" -Actual $result
 
@@ -90,7 +90,7 @@ $result = Remove-AbsolutePaths -Text "D:\Users\otheruser\documents\file.txt" -Pr
 Assert-Equal -Name "Different drive letter user path redacted" `
     -Expected "<REDACTED>\documents\file.txt" -Actual $result
 
-$result = Remove-AbsolutePaths -Text "C:/Users/andre/.claude/settings.json" -ProjectRoot $projectRoot
+$result = Remove-AbsolutePaths -Text "C:/Users/testuser/.claude/settings.json" -ProjectRoot $projectRoot
 Assert-Equal -Name "Forward-slash Windows user path redacted" `
     -Expected "<REDACTED>/.claude/settings.json" -Actual $result
 
@@ -120,7 +120,7 @@ Write-Host ""
 Write-Host "  MIXED CONTENT" -ForegroundColor Cyan
 Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
 
-$msg = "cd /c/Users/andre/repos/BS-9817-TEST && grep -in 'Users' ""C:\Users\andre\.claude\projects\file.txt"""
+$msg = "cd /c/Users/testuser/repos/my-project && grep -in 'Users' ""C:\Users\testuser\.claude\projects\file.txt"""
 $result = Remove-AbsolutePaths -Text $msg -ProjectRoot $projectRoot
 $hasProjectRoot = $result -match [regex]::Escape($projectRoot)
 $hasUserPath = $result -match '[A-Za-z]:[/\\]+Users[/\\]+\w+'

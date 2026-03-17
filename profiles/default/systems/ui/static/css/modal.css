@@ -609,6 +609,59 @@
     border-left: 3px solid var(--color-primary-dim);
 }
 
+.form-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+/* Decision modal uses smaller textareas than the default task creation form */
+.decision-modal .form-textarea {
+    min-height: 72px;
+}
+
+.decision-modal .form-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bezel-dark);
+    border: 1px solid var(--bezel-edge);
+    border-radius: 4px;
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    box-sizing: border-box;
+}
+
+.decision-modal .form-input:focus {
+    outline: none;
+    border-color: var(--color-primary-dim);
+    box-shadow: 0 0 0 2px var(--primary-10);
+}
+
+.decision-modal .form-input::placeholder {
+    color: var(--label-color);
+    opacity: 0.6;
+}
+
+.decision-modal .form-select {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bezel-dark);
+    border: 1px solid var(--bezel-edge);
+    border-radius: 4px;
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+.decision-modal .form-select:focus {
+    outline: none;
+    border-color: var(--color-primary-dim);
+}
+
 /* Form checkbox option (for task creation modal) */
 .form-option {
     margin-top: 12px;
@@ -1025,6 +1078,19 @@
 
 .task-tag.tag-dependency {
     color: var(--color-tertiary);
+}
+
+.task-tag.tag-decision {
+    color: var(--color-warning);
+    transition: opacity 0.15s;
+}
+.task-tag.tag-decision:hover {
+    opacity: 0.75;
+}
+.task-tag.tag-decision-deprecated,
+.task-tag.tag-decision-superseded {
+    opacity: 0.55;
+    text-decoration: line-through;
 }
 
 /* Analysis section styling */

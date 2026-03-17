@@ -109,7 +109,7 @@ Scan all briefing documents (`jira-context.md`, `interview-summary.md`, and any 
 - Repository names mentioned in Jira descriptions, Confluence pages, or uploaded specs
 - ADO project/repo references (e.g., `Project/RepoName`, Azure DevOps URLs)
 - Git clone URLs (`https://dev.azure.com/...`, `git@ssh.dev.azure.com:...`)
-- References like "the Ark repo", "VO e-Com Rovva clone", etc.
+- References like "the Payments repo", "Checkout service clone", etc.
 
 **If repos are found**, write a seed `.bot/workspace/product/research-repos.md` using the standard tier-table format:
 

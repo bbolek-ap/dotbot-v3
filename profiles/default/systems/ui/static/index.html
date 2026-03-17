@@ -57,6 +57,7 @@
                     <button class="tab" data-tab="product">Product</button>
                     <button class="tab" data-tab="pipeline">Roadmap</button>
                     <button class="tab" data-tab="processes">Processes</button>
+                    <button class="tab" data-tab="decisions">Decisions</button>
                     <button class="tab" data-tab="workflow">Workflow</button>
                     <button class="tab" data-tab="errors">Errors <span class="error-badge hidden" id="error-badge">0</span></button>
                     <button class="tab" data-tab="settings">Settings</button>
@@ -302,6 +303,42 @@
                     </div>
                 </div>
 
+                <!-- Decisions Context: Decision Summary -->
+                <div class="context-panel hidden" data-context="decisions">
+                    <div class="sidebar-section">
+                        <div class="sidebar-header">
+                            <span class="sidebar-title">◈ Decisions</span>
+                        </div>
+                        <div class="sidebar-content">
+                            <div class="decision-summary">
+                                <div class="summary-item">
+                                    <span class="summary-label">Proposed</span>
+                                    <span class="summary-value" id="decision-count-proposed">0</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Accepted</span>
+                                    <span class="summary-value active" id="decision-count-accepted">0</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Deprecated</span>
+                                    <span class="summary-value" id="decision-count-deprecated">0</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Superseded</span>
+                                    <span class="summary-value" id="decision-count-superseded">0</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Total</span>
+                                    <span class="summary-value" id="decision-count-total">0</span>
+                                </div>
+                            </div>
+                            <div style="margin-top: 10px;">
+                                <button class="ctrl-btn-sm primary" id="decision-create-btn" style="width:100%;">+ New Decision</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Workflow Context: Dynamic Prompts Directories -->
                 <div class="context-panel hidden" data-context="workflow">
                     <div id="prompts-sidebar">
@@ -343,7 +380,7 @@
                                 <div class="settings-nav-item" data-settings-section="verification">Verification</div>
                                 <div class="settings-nav-item" data-settings-section="costs">Costs</div>
                                 <div class="settings-nav-item" data-settings-section="editor">Editor</div>
-                                <div class="settings-nav-item" data-settings-section="ext-notifications">Notifications</div>
+                                <div class="settings-nav-item" data-settings-section="mothership">Mothership</div>
                                 <div class="settings-nav-item" data-settings-section="aether" id="aetherNavItem" style="display:none">Aether</div>
                             </div>
                         </div>
@@ -553,6 +590,89 @@
                         <!-- Process List -->
                         <div id="process-list">
                             <div class="empty-state">No processes</div>
+                        </div>
+                    </div>
+
+                    <!-- Decisions Tab -->
+                    <div class="tab-pane" id="tab-decisions">
+                        <!-- Decision List (expandable rows grouped by status) -->
+                        <div id="decision-list">
+                            <div class="empty-state">No decisions yet. Create one or run the interview workflow to generate them automatically.</div>
+                        </div>
+
+                        <!-- Decision Create/Edit Modal -->
+                        <div class="modal-overlay" id="decision-modal-overlay">
+                            <div class="modal modal-wide decision-modal">
+                                <div class="modal-header">
+                                    <span class="modal-title">◈ <span id="decision-modal-title">New Decision</span></span>
+                                    <button class="modal-close" id="decision-modal-close">✕</button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="task-create-form">
+                                        <div class="form-row">
+                                            <div class="form-group" style="flex:1">
+                                                <label class="form-label">Title</label>
+                                                <input type="text" class="form-input" id="decision-form-title" placeholder="e.g. Use Repository Pattern for Data Access" />
+                                            </div>
+                                            <div class="form-group" style="flex:0 0 140px">
+                                                <label class="form-label">Status</label>
+                                                <select class="form-select" id="decision-form-status">
+                                                    <option value="proposed">Proposed</option>
+                                                    <option value="accepted">Accepted</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="form-row">
+                                            <div class="form-group" style="flex:1">
+                                                <label class="form-label">Type</label>
+                                                <select class="form-select" id="decision-form-type">
+                                                    <option value="technical" selected>Technical</option>
+                                                    <option value="architecture">Architecture</option>
+                                                    <option value="business">Business</option>
+                                                    <option value="process">Process</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group" style="flex:1">
+                                                <label class="form-label">Impact</label>
+                                                <select class="form-select" id="decision-form-impact">
+                                                    <option value="high">High</option>
+                                                    <option value="medium" selected>Medium</option>
+                                                    <option value="low">Low</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Context</label>
+                                            <div class="form-hint">Why did this decision need to be made?</div>
+                                            <textarea class="form-textarea" id="decision-form-context" rows="3"></textarea>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Decision</label>
+                                            <div class="form-hint">What was decided?</div>
+                                            <textarea class="form-textarea" id="decision-form-decision" rows="3"></textarea>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Consequences</label>
+                                            <div class="form-hint">Trade-offs and constraints for future work</div>
+                                            <textarea class="form-textarea" id="decision-form-consequences" rows="3"></textarea>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Stakeholders</label>
+                                            <div class="form-hint">Comma-separated list of stakeholders</div>
+                                            <input type="text" class="form-input" id="decision-form-stakeholders" placeholder="e.g. backend-team, tech-lead" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">Tags</label>
+                                            <div class="form-hint">Comma-separated tags for categorization</div>
+                                            <input type="text" class="form-input" id="decision-form-tags" placeholder="e.g. database, performance" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="modal-footer task-create-footer">
+                                    <button class="ctrl-btn" id="decision-modal-cancel">Cancel</button>
+                                    <button class="ctrl-btn primary" id="decision-modal-save">Save Decision</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -903,23 +1023,27 @@
                                 </div>
                             </div>
 
-                            <!-- External Notifications Section -->
-                            <div class="settings-section hidden" id="settings-ext-notifications">
+                            <!-- Mothership Section -->
+                            <div class="settings-section hidden" id="settings-mothership">
                                 <div class="module">
                                     <div class="module-header">
-                                        <span class="module-title">&#9672; External Notifications</span>
+                                        <span class="module-title">&#9672; Mothership</span>
+                                        <span class="mothership-health-indicator" id="mothership-health" title="Server status">
+                                            <span class="health-dot" id="mothership-health-dot"></span>
+                                            <span class="health-label" id="mothership-health-label">Unknown</span>
+                                        </span>
                                     </div>
                                     <div class="module-screen">
                                         <div class="settings-description">
-                                            Send task questions to external channels (Teams, Email, Jira) via DotbotServer.
+                                            Connect to DotbotServer to sync task state and deliver questions via external channels (Teams, Email, Jira).
                                             When enabled, questions that put tasks into "needs-input" are also delivered externally.
                                             Responses are polled and reconciled automatically.
                                         </div>
                                         <div class="settings-group">
                                             <div class="setting-row">
                                                 <div class="setting-info">
-                                                    <span class="setting-label">Enable Notifications</span>
-                                                    <span class="setting-description">Send task questions to external channels</span>
+                                                    <span class="setting-label">Enable Mothership</span>
+                                                    <span class="setting-description">Connect to DotbotServer for sync and external delivery</span>
                                                 </div>
                                                 <label class="toggle-switch">
                                                     <input type="checkbox" id="notif-enabled">
@@ -959,7 +1083,38 @@
                                                     <span class="setting-label">Test Connection</span>
                                                     <span class="setting-description" id="notif-test-status"></span>
                                                 </div>
-                                                <button class="btn btn-small" id="notif-test-btn" onclick="testNotificationServer()">Test</button>
+                                                <button class="btn btn-small" id="notif-test-btn">Test</button>
+                                            </div>
+                                        </div>
+
+                                        <div class="settings-subsection">
+                                            <div class="subsection-header">Sync Controls</div>
+                                            <div class="setting-row">
+                                                <div class="setting-info">
+                                                    <span class="setting-label">Sync Task State</span>
+                                                    <span class="setting-description">Push task status updates to mothership</span>
+                                                </div>
+                                                <label class="toggle-switch">
+                                                    <input type="checkbox" id="ms-sync-tasks">
+                                                    <span class="toggle-slider"></span>
+                                                </label>
+                                            </div>
+                                            <div class="setting-row">
+                                                <div class="setting-info">
+                                                    <span class="setting-label">Sync Questions</span>
+                                                    <span class="setting-description">Deliver task questions to external channels</span>
+                                                </div>
+                                                <label class="toggle-switch">
+                                                    <input type="checkbox" id="ms-sync-questions">
+                                                    <span class="toggle-slider"></span>
+                                                </label>
+                                            </div>
+                                            <div class="setting-row">
+                                                <div class="setting-info">
+                                                    <span class="setting-label">Poll Interval</span>
+                                                    <span class="setting-description">Seconds between response checks (min: 5)</span>
+                                                </div>
+                                                <input type="number" class="settings-number-input" id="notif-poll-interval" min="5" step="5" placeholder="30">
                                             </div>
                                         </div>
 
@@ -968,7 +1123,7 @@
                                             <div class="setting-row">
                                                 <div class="setting-info">
                                                     <span class="setting-label">Channel</span>
-                                                    <span class="setting-description">Delivery channel for notifications</span>
+                                                    <span class="setting-description">Delivery channel for questions</span>
                                                 </div>
                                                 <select class="settings-select" id="notif-channel">
                                                     <option value="teams">Microsoft Teams</option>
@@ -1003,20 +1158,9 @@
                                             </div>
                                         </div>
 
-                                        <div class="settings-subsection">
-                                            <div class="subsection-header">Polling</div>
-                                            <div class="setting-row">
-                                                <div class="setting-info">
-                                                    <span class="setting-label">Poll Interval</span>
-                                                    <span class="setting-description">Seconds between response checks (min: 5)</span>
-                                                </div>
-                                                <input type="number" class="settings-number-input" id="notif-poll-interval" min="5" step="5" placeholder="30">
-                                            </div>
-                                        </div>
-
                                         <div class="settings-note" style="margin-top: 16px;">
                                             The API key is stored in .bot/.control/settings.json (gitignored). All other settings are saved in settings.default.json.
-                                            The notification poller requires a Web UI restart to pick up interval changes.
+                                            The poller requires a Web UI restart to pick up interval changes.
                                         </div>
                                     </div>
                                 </div>
@@ -1485,6 +1629,7 @@
     <script src="modules/errors.js"></script>
     <script src="modules/notifications.js"></script>
     <script src="modules/aether.js"></script>
+    <script src="modules/decisions.js"></script>
 
     <!-- Main entry point (must be last) -->
     <script src="app.js"></script>

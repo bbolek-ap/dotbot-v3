@@ -79,12 +79,30 @@ function Invoke-RepoClone {
     $cloneUrl = "https://$($adoPat)@$orgHost/$project/_git/$repo"
 
     try {
-        & git clone $cloneUrl $clonePath 2>&1 | Out-Null
+        $cloneOutput = & git clone $cloneUrl $clonePath 2>&1
         if ($LASTEXITCODE -ne 0) {
-            throw "git clone failed with exit code $LASTEXITCODE"
+            $errorMsg = ($cloneOutput | Out-String).Trim()
+            $errorMsg = $errorMsg -replace [regex]::Escape($adoPat), '***'
+
+            $errorType = if ($errorMsg -match 'Authentication failed|401|403') { "authentication_failed" }
+                         elseif ($errorMsg -match 'not found|does not exist|404') { "repo_not_found" }
+                         elseif ($errorMsg -match 'timeout|Could not resolve host') { "network_error" }
+                         else { "clone_failed" }
+
+            return @{
+                success    = $false
+                error_type = $errorType
+                message    = "Clone failed for $repo from $project`: $errorMsg"
+                path       = $null
+            }
         }
     } catch {
-        throw "Failed to clone $repo from $project : $_"
+        return @{
+            success    = $false
+            error_type = "exception"
+            message    = "Failed to clone $repo from $project`: $_"
+            path       = $null
+        }
     }
 
     # Detect default branch

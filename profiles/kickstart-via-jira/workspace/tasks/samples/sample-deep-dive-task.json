@@ -1,15 +1,15 @@
 {
   "id": "00000000-0000-0000-0000-000000000002",
-  "name": "Deep dive: EInvoiceUpload",
-  "description": "Conduct a thorough code-level analysis of the EInvoiceUpload repository. Clone the repo, analyse source code, database scripts, configuration, and tests. Produce a structured deep-dive report covering all files requiring changes, new files needed, database impact, test changes, and effort estimates.",
+  "name": "Deep dive: OrderService",
+  "description": "Conduct a thorough code-level analysis of the OrderService repository. Clone the repo, analyse source code, database scripts, configuration, and tests. Produce a structured deep-dive report covering all files requiring changes, new files needed, database impact, test changes, and effort estimates.",
   "category": "research",
   "priority": 10,
   "effort": "L",
   "status": "todo",
   "dependencies": ["Research Atlassian for initiative context", "Scan repos for impact"],
   "acceptance_criteria": [
-    "Repo cloned to repos/EInvoiceUpload/ on initiative branch",
-    "Deep dive report written to .bot/workspace/product/briefing/repos/EInvoiceUpload.md",
+    "Repo cloned to repos/OrderService/ on initiative branch",
+    "Deep dive report written to .bot/workspace/product/briefing/repos/OrderService.md",
     "Reference implementation file inventory complete",
     "Files requiring changes identified with change types",
     "New files needed listed with proposed paths",
@@ -30,12 +30,12 @@
   "applicable_agents": [".bot/prompts/agents/researcher/AGENT.md"],
   "research_prompt": "repo-deep-dive.md",
   "external_repo": {
-    "project": "Titan",
-    "repo": "EInvoiceUpload"
+    "project": "Platform",
+    "repo": "OrderService"
   },
   "tier": 1,
   "impact": "HIGH",
-  "working_dir": "repos/EInvoiceUpload",
+  "working_dir": "repos/OrderService",
   "created_at": "2025-01-01T00:00:00Z",
   "updated_at": "2025-01-01T00:00:00Z",
   "completed_at": null

@@ -362,8 +362,8 @@ A structured index of all downloaded and discovered documents:
 
 | # | Relative Path | Source | Content Summary | Relevance (1-10) |
 |---|---------------|--------|-----------------|-------------------|
-| 1 | briefing/docs/BS-9817_Main_spec.pdf | jira-attachment | Technical specification for... | 9 |
-| 2 | briefing/docs/BS-9817_Design_arch.png | confluence-attachment | Architecture diagram showing... | 7 |
+| 1 | briefing/docs/PROJ-1234_Main_spec.pdf | jira-attachment | Technical specification for... | 9 |
+| 2 | briefing/docs/PROJ-1234_Design_arch.png | confluence-attachment | Architecture diagram showing... | 7 |
 
 ## Key Findings
 

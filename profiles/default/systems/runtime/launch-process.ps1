@@ -1017,6 +1017,8 @@ Work on this task autonomously. When complete, ensure you call task_mark_done vi
                 $prompt = $prompt -replace '\{\{ACCEPTANCE_CRITERIA\}\}', $acceptanceCriteria
                 $steps = if ($task.steps) { ($task.steps | ForEach-Object { "- $_" }) -join "`n" } else { "No specific steps defined." }
                 $prompt = $prompt -replace '\{\{TASK_STEPS\}\}', $steps
+                $splitThreshold = if ($settings.analysis.split_threshold_effort) { $settings.analysis.split_threshold_effort } else { 'XL' }
+                $prompt = $prompt -replace '\{\{SPLIT_THRESHOLD_EFFORT\}\}', $splitThreshold
 
                 $branchForPrompt = "main"
                 $prompt = $prompt -replace '\{\{BRANCH_NAME\}\}', $branchForPrompt
@@ -1548,6 +1550,8 @@ elseif ($Type -eq 'workflow') {
             $analysisPrompt = $analysisPrompt -replace '\{\{ACCEPTANCE_CRITERIA\}\}', $acceptanceCriteria
             $steps = if ($task.steps) { ($task.steps | ForEach-Object { "- $_" }) -join "`n" } else { "No specific steps defined." }
             $analysisPrompt = $analysisPrompt -replace '\{\{TASK_STEPS\}\}', $steps
+            $splitThreshold = if ($settings.analysis.split_threshold_effort) { $settings.analysis.split_threshold_effort } else { 'XL' }
+            $analysisPrompt = $analysisPrompt -replace '\{\{SPLIT_THRESHOLD_EFFORT\}\}', $splitThreshold
             $analysisPrompt = $analysisPrompt -replace '\{\{BRANCH_NAME\}\}', 'main'
 
             # Build resolved questions context for resumed tasks
@@ -2366,7 +2370,9 @@ An interview-summary.md file exists in .bot/workspace/product/ containing the us
                 $lpPath = Join-Path $botRoot "systems\runtime\launch-process.ps1"
                 $wfDesc = if ($phaseName) { $phaseName } else { "Execute tasks" }
                 $wfArgs = @("-NoProfile", "-File", $lpPath, "-Type", "workflow", "-Continue", "-NoWait", "-Description", "`"$wfDesc`"")
-                $wfProc = Start-Process pwsh -ArgumentList $wfArgs -WorkingDirectory $projectRoot -WindowStyle Normal -PassThru
+                $startParams = @{ ArgumentList = $wfArgs; WorkingDirectory = $projectRoot; PassThru = $true }
+                if ($IsWindows) { $startParams.WindowStyle = 'Normal' }
+                $wfProc = Start-Process pwsh @startParams
 
                 Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Launched workflow process (PID: $($wfProc.Id))"
                 Write-Status "Launched workflow process (PID: $($wfProc.Id))" -Type Process
@@ -2408,7 +2414,9 @@ An interview-summary.md file exists in .bot/workspace/product/ containing the us
                     Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Retrying workflow phase (attempt $wfRetries/$maxWfRetries, $remainingCount tasks remaining)"
                     Write-Status "Retrying workflow phase ($remainingCount tasks remaining, attempt $wfRetries/$maxWfRetries)..." -Type Process
 
-                    $wfProc = Start-Process pwsh -ArgumentList $wfArgs -WorkingDirectory $projectRoot -WindowStyle Normal -PassThru
+                    $startParams = @{ ArgumentList = $wfArgs; WorkingDirectory = $projectRoot; PassThru = $true }
+                    if ($IsWindows) { $startParams.WindowStyle = 'Normal' }
+                    $wfProc = Start-Process pwsh @startParams
 
                     while (-not $wfProc.HasExited) {
                         Start-Sleep -Seconds 5
