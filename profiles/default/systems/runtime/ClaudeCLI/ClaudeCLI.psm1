@@ -9,8 +9,8 @@ $script:theme = Get-DotBotTheme
 # Import PathSanitizer for stripping absolute paths from activity log messages
 Import-Module (Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) "systems\mcp\modules\PathSanitizer.psm1") -Force
 
-# Import ErrorLogger for structured error logging
-Import-Module "$PSScriptRoot\..\modules\ErrorLogger.psm1" -Force
+# Import unified structured logging module
+Import-Module (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "ui\modules\DotBotLog.psm1") -Force
 
 #region Helper Functions
 
@@ -112,6 +112,11 @@ function Write-ActivityLog {
             }
         }
     }
+
+    # Delegate to unified structured log (Write-DotBotLog writes to dotbot-{date}.jsonl)
+    try {
+        Write-DotBotLog -Level Info -Message $sanitizedMessage -Context @{ type = $Type; phase = $effectivePhase }
+    } catch {}
 }
 
 function Write-ClaudeLog {
@@ -578,7 +583,7 @@ function Invoke-ClaudeStream {
         $claudeProc.Start() | Out-Null
     } catch {
         $argLen = ($cliArgs -join ' ').Length
-        try { Write-ErrorLog -Message "Failed to start claude process: $($_.Exception.Message) (args length: $argLen)" -Source 'claude-cli' -Level 'critical' -ErrorCode 'PROCESS_START_FAILED' -Exception $_ } catch {}
+        try { Write-DotBotLog -Level Fatal -Message "Failed to start claude process: $($_.Exception.Message) (args length: $argLen)" -Context @{ source = 'claude-cli'; error_code = 'PROCESS_START_FAILED' } -Exception $_ } catch {}
         throw
     }
 
@@ -642,7 +647,7 @@ function Invoke-ClaudeStream {
                         $script:LastRateLimitInfo = $rateLimitText
 
                         Write-ActivityLog -Type "rate_limit" -Message $rateLimitText
-                        Write-ErrorLog -Message "Rate limit hit: $rateLimitText" -Source 'claude-cli' -Level 'warning' -ErrorCode 'RATE_LIMIT'
+                        Write-DotBotLog -Level Warn -Message "Rate limit hit: $rateLimitText" -Context @{ source = 'claude-cli'; error_code = 'RATE_LIMIT' }
                         return
                     }
                 } catch {
@@ -964,7 +969,7 @@ function Invoke-ClaudeStream {
                 [Console]::Error.Flush()
             }
             Write-Debug "Error processing stream event: $($_.Exception.Message)"
-            Write-ErrorLog -Message "Stream event processing error: $($_.Exception.Message)" -Source 'claude-cli' -Level 'warning' -Exception $_
+            Write-DotBotLog -Level Warn -Message "Stream event processing error: $($_.Exception.Message)" -Context @{ source = 'claude-cli' } -Exception $_
         }
     }
 
@@ -1040,7 +1045,7 @@ function Invoke-ClaudeStream {
                 [Console]::Error.Flush()
             }
             Write-Debug "Error processing stream event: $($_.Exception.Message)"
-            Write-ErrorLog -Message "Stream line processing error: $($_.Exception.Message)" -Source 'claude-cli' -Level 'warning' -Exception $_
+            Write-DotBotLog -Level Warn -Message "Stream line processing error: $($_.Exception.Message)" -Context @{ source = 'claude-cli' } -Exception $_
         }
     }
 

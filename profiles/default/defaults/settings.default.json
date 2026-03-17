@@ -18,6 +18,12 @@
     "name": "off",
     "custom_command": ""
   },
+  "logging": {
+    "console_level": "Info",
+    "file_level": "Debug",
+    "retention_days": 7,
+    "max_file_size_mb": 50
+  },
   "costs": {
     "hourly_rate": 50,
     "ai_cost_per_task": 0.50,

@@ -1406,7 +1406,7 @@
     border-radius: 2px;
 }
 
-.error-level-critical {
+.error-level-fatal {
     color: #ff3333;
     background: rgba(255, 51, 51, 0.15);
 }
@@ -1416,9 +1416,19 @@
     background: rgba(255, 107, 107, 0.1);
 }
 
-.error-level-warning {
+.error-level-warn {
     color: var(--color-warning, #ffaa33);
     background: rgba(255, 170, 51, 0.1);
+}
+
+.error-level-info {
+    color: var(--color-info, #5bc0de);
+    background: rgba(91, 192, 222, 0.1);
+}
+
+.error-level-debug {
+    color: var(--color-muted, #888);
+    background: rgba(136, 136, 136, 0.08);
 }
 
 .error-source {

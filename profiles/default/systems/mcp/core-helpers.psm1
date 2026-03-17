@@ -1,10 +1,10 @@
 # Core Helper Functions
 # Essential utilities for all MCP tools
 
-# Import ErrorLogger if available (non-fatal if missing)
-$_errorLoggerPath = Join-Path (Split-Path -Parent $PSScriptRoot) "runtime\modules\ErrorLogger.psm1"
-if (Test-Path $_errorLoggerPath) {
-    Import-Module $_errorLoggerPath -Force
+# Import DotBotLog if available (non-fatal if missing)
+$_dotBotLogPath = Join-Path (Split-Path -Parent $PSScriptRoot) "ui\modules\DotBotLog.psm1"
+if (Test-Path $_dotBotLogPath) {
+    Import-Module $_dotBotLogPath -Force
 }
 
 #region Solution Discovery
@@ -157,7 +157,7 @@ function New-EnvelopeResponse {
     if ($Actions) { $response.actions = $Actions }
 
     # Log errors to structured error log
-    if ($Errors.Count -gt 0 -and (Get-Command Write-ErrorLog -ErrorAction SilentlyContinue)) {
+    if ($Errors.Count -gt 0 -and (Get-Command Write-DotBotLog -ErrorAction SilentlyContinue)) {
         foreach ($err in $Errors) {
             # Normalize error objects: support hashtables with 'message'/'code' keys,
             # objects with message/code properties, and generic objects via ToString().
@@ -194,7 +194,7 @@ function New-EnvelopeResponse {
             if (-not $errCode) {
                 $errCode = 'TOOL_ERROR'
             }
-            Write-ErrorLog -Message "Tool '$Tool' error: $errMsg" -Source 'mcp-tool' -ErrorCode $errCode
+            Write-DotBotLog -Level Error -Message "Tool '$Tool' error: $errMsg" -Context @{ source = 'mcp-tool'; error_code = $errCode }
         }
     }
 

@@ -5,7 +5,6 @@
 
 let errorCurrentOffset = 0;
 const ERROR_PAGE_SIZE = 50;
-let errorPollingActive = false;
 
 /**
  * Initialize the errors tab - attach event handlers
@@ -29,7 +28,7 @@ async function fetchErrors() {
     const level = document.getElementById('error-filter-level')?.value || '';
     const source = document.getElementById('error-filter-source')?.value || '';
 
-    let url = `${API_BASE}/api/errors?limit=${ERROR_PAGE_SIZE}&offset=${errorCurrentOffset}`;
+    let url = `${API_BASE}/api/logs?limit=${ERROR_PAGE_SIZE}&offset=${errorCurrentOffset}`;
     if (level) url += `&level=${encodeURIComponent(level)}`;
     if (source) url += `&source=${encodeURIComponent(source)}`;
 
@@ -62,10 +61,13 @@ function renderErrors(entries, total) {
         return;
     }
 
-    const rows = entries.map(entry => {
+    const VALID_LEVELS = { critical: 'critical', fatal: 'fatal', error: 'error', warning: 'warning', warn: 'warn', info: 'info', debug: 'debug' };
+
+    container.innerHTML = entries.map(entry => {
         const ts = formatErrorTimestamp(entry.timestamp);
-        const levelClass = `error-level-${entry.level || 'error'}`;
-        const levelLabel = (entry.level || 'error').toUpperCase();
+        const safeLevel = VALID_LEVELS[(entry.level || '').toLowerCase()] || 'error';
+        const levelClass = `error-level-${safeLevel}`;
+        const levelLabel = safeLevel.toUpperCase();
         const sourceLabel = escapeHtml(entry.source || 'unknown');
         const message = escapeHtml(entry.message || '');
         const taskId = entry.task_id ? `<span class="error-task-id">${escapeHtml(entry.task_id.substring(0, 8))}</span>` : '';
@@ -76,7 +78,7 @@ function renderErrors(entries, total) {
             ? `<div class="error-stack hidden"><pre>${escapeHtml(entry.stack_trace)}</pre></div>`
             : '';
 
-        return `<div class="error-entry${hasStack}" onclick="toggleErrorStack(this)">
+        return `<div class="error-entry${hasStack}" role="button" tabindex="0" aria-expanded="false" onclick="toggleErrorStack(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleErrorStack(this)}">
             <div class="error-header">
                 <span class="error-level ${levelClass}">${levelLabel}</span>
                 <span class="error-source">${sourceLabel}</span>
@@ -89,8 +91,6 @@ function renderErrors(entries, total) {
             ${stackHtml}
         </div>`;
     }).join('');
-
-    container.innerHTML = rows;
     renderPagination(total, errorCurrentOffset);
 }
 
@@ -101,6 +101,7 @@ function toggleErrorStack(el) {
     const stack = el.querySelector('.error-stack');
     if (stack) {
         stack.classList.toggle('hidden');
+        el.setAttribute('aria-expanded', !stack.classList.contains('hidden'));
     }
 }
 
@@ -161,9 +162,11 @@ function renderErrorSummary(summary) {
 function updateErrorSidebar(summary) {
     if (!summary) return;
     setElementText('error-stat-total', summary.total || 0);
-    setElementText('error-stat-critical', (summary.by_level && summary.by_level.critical) || 0);
+    setElementText('error-stat-critical', (summary.by_level && summary.by_level.fatal) || 0);
     setElementText('error-stat-error', (summary.by_level && summary.by_level.error) || 0);
-    setElementText('error-stat-warning', (summary.by_level && summary.by_level.warning) || 0);
+    setElementText('error-stat-warning', (summary.by_level && summary.by_level.warn) || 0);
+    setElementText('error-stat-info', (summary.by_level && summary.by_level.info) || 0);
+    setElementText('error-stat-debug', (summary.by_level && summary.by_level.debug) || 0);
 
     // Source breakdown
     const sourcesEl = document.getElementById('error-sidebar-sources');
@@ -211,7 +214,7 @@ async function clearErrors() {
     if (!confirm('Clear all error log entries?')) return;
 
     try {
-        const response = await fetch(`${API_BASE}/api/errors/clear`, { method: 'POST' });
+        const response = await fetch(`${API_BASE}/api/logs/clear`, { method: 'POST' });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const result = await response.json();
         if (result.success) {

@@ -83,7 +83,9 @@ function Get-DecisionList {
                     related_decision_ids = @($dec.related_decision_ids)
                     file_name           = $f.Name
                 }
-            } catch { }
+            } catch {
+                try { Write-DotBotLog -Level Warn -Message "Failed to parse decision file: $($f.Name)" -Context @{ source = 'ui-server' } -Exception $_ } catch {}
+            }
         }
     }
 
@@ -183,6 +185,7 @@ function New-Decision {
     $filePath = Join-Path $targetDir "$id-$slug.json"
     $dec | ConvertTo-Json -Depth 10 | Set-Content -Path $filePath -Encoding UTF8
 
+    try { Write-DotBotLog -Level Info -Message "Decision created: $id '$title' [$type/$status]" -Context @{ source = 'ui-server'; decision_id = $id } } catch {}
     return @{ success = $true; decision_id = $id; status = $status; file_path = $filePath; message = "Decision '$title' created as $id" }
 }
 
@@ -225,6 +228,7 @@ function Update-Decision {
 
     $dec | ConvertTo-Json -Depth 10 | Set-Content -Path $found.file.FullName -Encoding UTF8
 
+    try { Write-DotBotLog -Level Info -Message "Decision updated: $DecisionId" -Context @{ source = 'ui-server'; decision_id = $DecisionId } } catch {}
     return @{ success = $true; decision_id = $DecisionId; message = "Decision '$DecisionId' updated" }
 }
 
@@ -288,6 +292,7 @@ function Set-DecisionStatus {
     $dec | ConvertTo-Json -Depth 10 | Set-Content -Path $targetPath -Encoding UTF8
     Remove-Item -Path $found.file.FullName -Force
 
+    try { Write-DotBotLog -Level Info -Message "Decision status changed: $DecisionId $($found.status) -> $NewStatus" -Context @{ source = 'ui-server'; decision_id = $DecisionId } } catch {}
     return @{ success = $true; decision_id = $DecisionId; status = $NewStatus; file_path = $targetPath; message = "Decision '$DecisionId' is now $NewStatus" }
 }
 

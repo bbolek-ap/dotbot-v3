@@ -98,7 +98,7 @@ Import-Module "$PSScriptRoot\ProviderCLI\ProviderCLI.psm1" -Force
 Import-Module "$PSScriptRoot\ClaudeCLI\ClaudeCLI.psm1" -Force
 Import-Module "$PSScriptRoot\modules\DotBotTheme.psm1" -Force
 Import-Module "$PSScriptRoot\modules\InstanceId.psm1" -Force
-Import-Module "$PSScriptRoot\modules\ErrorLogger.psm1" -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) "ui\modules\DotBotLog.psm1") -Force
 $t = Get-DotBotTheme
 
 . "$PSScriptRoot\modules\ui-rendering.ps1"
@@ -235,10 +235,14 @@ function Write-ProcessActivity {
 
 function Write-Diag {
     param([string]$Msg)
-    if (-not $script:diagLogPath) { return }
-    try {
-        "$(Get-Date -Format 'o') [$PID] $Msg" | Add-Content -Path $script:diagLogPath -Encoding utf8NoBOM
-    } catch {}
+    # Write to legacy diag log
+    if ($script:diagLogPath) {
+        try {
+            "$(Get-Date -Format 'o') [$PID] $Msg" | Add-Content -Path $script:diagLogPath -Encoding utf8NoBOM
+        } catch {}
+    }
+    # Delegate to unified structured log
+    try { Write-DotBotLog -Level Debug -Message $Msg } catch {}
 }
 
 function Test-ProcessStopSignal {
@@ -451,7 +455,7 @@ trap {
         $processData.error = "Unexpected termination: $($_.Exception.Message)"
         try { Write-ProcessFile -Id $procId -Data $processData } catch {}
         try { Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Process terminated unexpectedly: $($_.Exception.Message)" } catch {}
-        try { Write-ErrorLog -Message "Process crashed: $($_.Exception.Message)" -Source 'process' -Level 'critical' -ProcessType $Type -ProcessId $procId -ErrorCode 'PROCESS_CRASH' -Exception $_ } catch {}
+        try { Write-DotBotLog -Level Fatal -Message "Process crashed: $($_.Exception.Message)" -Context @{ source = 'process'; process_type = $Type; process_id = $procId; error_code = 'PROCESS_CRASH' } -Exception $_ } catch {}
     }
     try { Remove-ProcessLock -LockType $Type } catch {}
 }
@@ -1093,7 +1097,7 @@ Do NOT implement the task. Your job is research and preparation only.
                     $exitCode = 0
                 } catch {
                     Write-Status "Error: $($_.Exception.Message)" -Type Error
-                    Write-ErrorLog -Message "Provider invocation failed: $($_.Exception.Message)" -Source 'claude-cli' -ProcessType $Type -ProcessId $procId -TaskId $task.id -Exception $_
+                    Write-DotBotLog -Level Error -Message "Provider invocation failed: $($_.Exception.Message)" -Context @{ source = 'runtime'; process_type = $Type; process_id = $procId; task_id = $task.id } -Exception $_
                     $exitCode = 1
                 }
 
@@ -1172,7 +1176,7 @@ Do NOT implement the task. Your job is research and preparation only.
                     $failureReason = Get-FailureReason -ExitCode $exitCode -Stdout "" -Stderr "" -TimedOut $false
                     if (-not $failureReason.recoverable) {
                         Write-Status "Non-recoverable failure - skipping" -Type Error
-                        Write-ErrorLog -Message "Non-recoverable failure for task $($task.name): $($failureReason.description)" -Source 'runtime' -Level 'error' -ProcessType $Type -ProcessId $procId -TaskId $task.id -ErrorCode $failureReason.type
+                        Write-DotBotLog -Level Error -Message "Non-recoverable failure for task $($task.name): $($failureReason.description)" -Context @{ source = 'runtime'; process_type = $Type; process_id = $procId; task_id = $task.id; error_code = $failureReason.type }
                         try {
                             Invoke-TaskMarkSkipped -Arguments @{ task_id = $task.id; skip_reason = "non-recoverable" } | Out-Null
                         } catch {}
@@ -1182,7 +1186,7 @@ Do NOT implement the task. Your job is research and preparation only.
 
                 if ($attemptNumber -ge $maxRetriesPerTask) {
                     Write-Status "Max retries exhausted" -Type Error
-                    Write-ErrorLog -Message "Max retries exhausted for task $($task.name)" -Source 'runtime' -Level 'error' -ProcessType $Type -ProcessId $procId -TaskId $task.id -ErrorCode 'MAX_RETRIES'
+                    Write-DotBotLog -Level Error -Message "Max retries exhausted for task $($task.name)" -Context @{ source = 'runtime'; process_type = $Type; process_id = $procId; task_id = $task.id; error_code = 'MAX_RETRIES' }
                     if ($Type -eq 'execution') {
                         try {
                             Invoke-TaskMarkSkipped -Arguments @{ task_id = $task.id; skip_reason = "max-retries" } | Out-Null
@@ -1222,7 +1226,7 @@ Do NOT implement the task. Your job is research and preparation only.
                     } else {
                         Write-Status "Merge failed: $($mergeResult.message)" -Type Error
                         Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Merge failed for $($task.name): $($mergeResult.message)"
-                        Write-ErrorLog -Message "Merge failed for task $($task.name): $($mergeResult.message)" -Source 'worktree' -Level 'error' -ProcessType $Type -ProcessId $procId -TaskId $task.id -ErrorCode 'MERGE_FAILED'
+                        Write-DotBotLog -Level Error -Message "Merge failed for task $($task.name): $($mergeResult.message)" -Context @{ source = 'worktree'; process_type = $Type; process_id = $procId; task_id = $task.id; error_code = 'MERGE_FAILED' }
 
                         # Escalate: move task from done/ to needs-input/ with conflict info
                         $doneDir = Join-Path $tasksBaseDir "done"
@@ -1981,7 +1985,7 @@ Work on this task autonomously. When complete, ensure you call task_mark_done vi
                     } else {
                         Write-Status "Merge failed: $($mergeResult.message)" -Type Error
                         Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Merge failed for $($task.name): $($mergeResult.message)"
-                        Write-ErrorLog -Message "Merge failed for task $($task.name): $($mergeResult.message)" -Source 'worktree' -Level 'error' -ProcessType $Type -ProcessId $procId -TaskId $task.id -ErrorCode 'MERGE_FAILED'
+                        Write-DotBotLog -Level Error -Message "Merge failed for task $($task.name): $($mergeResult.message)" -Context @{ source = 'worktree'; process_type = $Type; process_id = $procId; task_id = $task.id; error_code = 'MERGE_FAILED' }
 
                         # Escalate: move task from done/ to needs-input/ with conflict info
                         $doneDir = Join-Path $tasksBaseDir "done"
@@ -2133,7 +2137,7 @@ Work on this task autonomously. When complete, ensure you call task_mark_done vi
         $processData.failed_at = (Get-Date).ToUniversalTime().ToString("o")
         Write-ProcessFile -Id $procId -Data $processData
         Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Process failed: $($_.Exception.Message)"
-        try { Write-ErrorLog -Message "Process failed: $($_.Exception.Message)" -Source 'process' -Level 'critical' -ProcessType $Type -ProcessId $procId -ErrorCode 'PROCESS_FAILED' -Exception $_ } catch {}
+        try { Write-DotBotLog -Level Fatal -Message "Process failed: $($_.Exception.Message)" -Context @{ source = 'process'; process_type = $Type; process_id = $procId; error_code = 'PROCESS_FAILED' } -Exception $_ } catch {}
         try { Write-Status "Process failed: $($_.Exception.Message)" -Type Error } catch { Write-Host "Process failed: $($_.Exception.Message)" }
     } finally {
         # Final cleanup
@@ -2720,7 +2724,7 @@ Instructions:
         $processData.failed_at = (Get-Date).ToUniversalTime().ToString("o")
         $processData.error = $_.Exception.Message
         $processData.heartbeat_status = "Failed: $($_.Exception.Message)"
-        try { Write-ErrorLog -Message "Process failed: $($_.Exception.Message)" -Source 'process' -Level 'critical' -ProcessType $Type -ProcessId $procId -ErrorCode 'PROCESS_FAILED' -Exception $_ } catch {}
+        try { Write-DotBotLog -Level Fatal -Message "Process failed: $($_.Exception.Message)" -Context @{ source = 'process'; process_type = $Type; process_id = $procId; error_code = 'PROCESS_FAILED' } -Exception $_ } catch {}
         Write-Status "Process failed: $($_.Exception.Message)" -Type Error
     }
 
@@ -2832,7 +2836,7 @@ IMPORTANT: The mission.md file MUST begin with an "Executive Summary" section (#
         $processData.failed_at = (Get-Date).ToUniversalTime().ToString("o")
         $processData.error = $_.Exception.Message
         $processData.heartbeat_status = "Failed: $($_.Exception.Message)"
-        try { Write-ErrorLog -Message "Process failed: $($_.Exception.Message)" -Source 'process' -Level 'critical' -ProcessType $Type -ProcessId $procId -ErrorCode 'PROCESS_FAILED' -Exception $_ } catch {}
+        try { Write-DotBotLog -Level Fatal -Message "Process failed: $($_.Exception.Message)" -Context @{ source = 'process'; process_type = $Type; process_id = $procId; error_code = 'PROCESS_FAILED' } -Exception $_ } catch {}
         Write-Status "Process failed: $($_.Exception.Message)" -Type Error
     }
 
@@ -2908,7 +2912,7 @@ $Prompt
         $processData.failed_at = (Get-Date).ToUniversalTime().ToString("o")
         $processData.error = $_.Exception.Message
         $processData.heartbeat_status = "Failed: $($_.Exception.Message)"
-        try { Write-ErrorLog -Message "Process failed: $($_.Exception.Message)" -Source 'process' -Level 'critical' -ProcessType $Type -ProcessId $procId -ErrorCode 'PROCESS_FAILED' -Exception $_ } catch {}
+        try { Write-DotBotLog -Level Fatal -Message "Process failed: $($_.Exception.Message)" -Context @{ source = 'process'; process_type = $Type; process_id = $procId; error_code = 'PROCESS_FAILED' } -Exception $_ } catch {}
         Write-Status "Process failed: $($_.Exception.Message)" -Type Error
     }
 

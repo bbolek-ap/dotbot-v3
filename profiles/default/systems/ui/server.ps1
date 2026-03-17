@@ -94,8 +94,6 @@ Import-Module (Join-Path $PSScriptRoot "modules\ProcessAPI.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "modules\StateBuilder.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "modules\NotificationPoller.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "modules\DecisionAPI.psm1") -Force
-Import-Module (Join-Path $PSScriptRoot "modules\ErrorLogAPI.psm1") -Force
-
 # Initialize all domain modules
 Initialize-FileWatchers -BotRoot $botRoot
 Initialize-GitAPI -ProjectRoot $projectRoot -BotRoot $botRoot
@@ -108,7 +106,9 @@ Initialize-TaskAPI -BotRoot $botRoot -ProjectRoot $projectRoot
 Initialize-ProcessAPI -ProcessesDir $processesDir -BotRoot $botRoot -ControlDir $controlDir
 Initialize-StateBuilder -BotRoot $botRoot -ControlDir $controlDir -ProcessesDir $processesDir
 Initialize-NotificationPoller -BotRoot $botRoot
-Initialize-ErrorLogAPI -ControlDir $controlDir -BotRoot $botRoot
+
+# Import DotBotLog AFTER Initialize calls (StateBuilder's -Force re-import can break earlier imports)
+Import-Module (Join-Path $PSScriptRoot "modules\DotBotLog.psm1") -Force
 
 # Request counter for single-line logging
 $script:requestCount = 0
@@ -909,17 +909,25 @@ try {
                     break
                 }
 
-                # --- Error Log ---
+                # --- Logs ---
 
-                "/api/errors" {
+                "/api/logs" {
                     $contentType = "application/json; charset=utf-8"
                     if ($method -eq "GET") {
-                        $limit = if ($request.QueryString["limit"]) { [int]$request.QueryString["limit"] } else { 50 }
-                        $offset = if ($request.QueryString["offset"]) { [int]$request.QueryString["offset"] } else { 0 }
+                        $limit = 50; $offset = 0
+                        $parsedVal = 0
+                        if ($request.QueryString["limit"] -and [int]::TryParse($request.QueryString["limit"], [ref]$parsedVal) -and $parsedVal -gt 0) {
+                            $limit = [Math]::Min($parsedVal, 500)
+                        }
+                        if ($request.QueryString["offset"] -and [int]::TryParse($request.QueryString["offset"], [ref]$parsedVal) -and $parsedVal -ge 0) {
+                            $offset = $parsedVal
+                        }
                         $source = $request.QueryString["source"]
                         $level = $request.QueryString["level"]
                         $since = $request.QueryString["since"]
-                        $content = (Get-ErrorLogEntries -Limit $limit -Offset $offset -Source $source -Level $level -Since $since) | ConvertTo-Json -Depth 10 -Compress
+                        $result = Read-DotBotLog -Limit $limit -Offset $offset -Source $source -Level $level -Since $since
+                        $summary = Get-DotBotLogSummary
+                        $content = (@{ success = $true; entries = $result.entries; total = $result.total; summary = $summary }) | ConvertTo-Json -Depth 10 -Compress
                     } else {
                         $statusCode = 405
                         $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
@@ -927,16 +935,17 @@ try {
                     break
                 }
 
-                "/api/errors/summary" {
+                "/api/logs/summary" {
                     $contentType = "application/json; charset=utf-8"
-                    $content = (Get-ErrorSummary) | ConvertTo-Json -Depth 5 -Compress
+                    $content = (@{ success = $true; summary = (Get-DotBotLogSummary) }) | ConvertTo-Json -Depth 5 -Compress
                     break
                 }
 
-                "/api/errors/clear" {
+                "/api/logs/clear" {
                     $contentType = "application/json; charset=utf-8"
                     if ($method -eq "POST") {
-                        $content = (Invoke-ClearErrorLog) | ConvertTo-Json -Compress
+                        $result = Clear-DotBotLog
+                        $content = (@{ success = $result.success; message = $result.message }) | ConvertTo-Json -Compress
                     } else {
                         $statusCode = 405
                         $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
