@@ -16,7 +16,7 @@ This standard applies to all research artifacts produced by research-category ta
 
 1. **No assumptions** — every claim must cite a source: Jira ticket key, Confluence page title, file path, class name, URL, or other verifiable reference.
 
-2. **Source attribution** — use inline citations. For Jira: ticket key (e.g., `BS-9817`). For Confluence: page title. For code: `repo/path/to/file.cs:L42`. For web: full URL.
+2. **Source attribution** — use inline citations. For Jira: ticket key (e.g., `PROJ-1234`). For Confluence: page title. For code: `repo/path/to/file.cs:L42`. For web: full URL.
 
 3. **Missing evidence** — if expected information is not found, explicitly state: "No evidence found for [topic]." Do not silently omit gaps.
 
@@ -32,7 +32,7 @@ This standard applies to all research artifacts produced by research-category ta
 
 3. **Relative paths only** — when referencing local files, use paths relative to the project root (e.g., `repos/MyRepo/src/Program.cs` not `/c/Users/dev/repos/MyRepo/src/Program.cs`).
 
-4. **Repo references by name** — reference repositories by name (e.g., "the EInvoiceUpload repo"), not by full clone path.
+4. **Repo references by name** — reference repositories by name (e.g., "the OrderService repo"), not by full clone path.
 
 ## Quality Checks
 
@@ -60,4 +60,4 @@ This standard applies to all research artifacts produced by research-category ta
 
 5. **Line length** — no hard wrapping. Let the renderer handle line breaks.
 
-6. **File naming** — follow the naming convention specified by the research methodology (e.g., `research-documents.md`, `repos/EInvoiceUpload.md`).
+6. **File naming** — follow the naming convention specified by the research methodology (e.g., `research-documents.md`, `repos/OrderService.md`).

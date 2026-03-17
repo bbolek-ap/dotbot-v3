@@ -29,6 +29,18 @@ mcp__dotbot__repo_list({})
 
 Identify repos with `status: "implemented"` — these need remediation.
 
+### Step 1.5: Check Baseline Build State
+
+Read the implementation plan for each repo:
+```
+Read({ file_path: "repos/{RepoName}/.bot/workspace/product/{RepoName}_Plan.md" })
+```
+
+If the analysis captured a `baseline_build` with pre-existing errors:
+- **Do NOT fix pre-existing errors** — only fix errors introduced by initiative changes
+- Document pre-existing errors in the remediation report under "Pre-existing Issues (Not Fixed)"
+- Compare current error list against baseline to identify which are new
+
 ### Step 2: For Each Repo — Build
 
 **2a. Set up environment:**
@@ -93,6 +105,7 @@ Common patterns:
 - Property name mismatches between models
 - Mock verification failures for changed method signatures
 - NuGet feed authentication issues
+- **File lock errors on Windows** — If a build fails with an IO/access/lock error, retry once before diagnosing code issues. Antivirus real-time scanning can temporarily lock files during compilation.
 
 ### Step 4: For Each Repo — Run Tests
 

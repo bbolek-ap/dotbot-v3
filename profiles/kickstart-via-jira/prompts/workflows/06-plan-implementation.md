@@ -14,6 +14,8 @@ Creates detailed, code-level implementation plans for each affected repository. 
 - Deep dive reports must exist for all target repos
 - `jira-context.md` must exist
 
+> **Heartbeat:** This phase can run 15-30 minutes. Call `steering_heartbeat` with a status update every 5 minutes to keep the dashboard informed.
+
 ## Your Task
 
 ### Step 1: Read Context

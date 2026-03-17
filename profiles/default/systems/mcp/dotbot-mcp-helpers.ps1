@@ -5,6 +5,7 @@
     Shared utility functions for JSON-RPC communication and date parsing
 #>
 
+
 function Write-JsonRpcResponse {
     param(
         [Parameter(Mandatory)]

@@ -36,3 +36,4 @@ server/teams-app/*.zip
 
 # Specs (local design docs)
 specs/
+/.vs

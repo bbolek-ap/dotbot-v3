@@ -6,7 +6,7 @@ namespace Dotbot.Server.Services;
 
 /// <summary>
 /// Stores question answers as JSON blobs in the "answers" container.
-/// Compatible with dotbot-v3 JSON state patterns.
+/// Compatible with dotbot JSON state patterns.
 /// </summary>
 public class AnswerStorageService
 {

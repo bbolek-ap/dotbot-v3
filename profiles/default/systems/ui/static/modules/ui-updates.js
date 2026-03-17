@@ -87,7 +87,7 @@ function updateTaskCounts(tasks) {
     
     // Update action widget
     if (typeof updateActionWidget === 'function') {
-        updateActionWidget(tasks.action_required || 0);
+        updateActionWidget(tasks.action_required || 0, { fromPoll: true });
     }
 }
 

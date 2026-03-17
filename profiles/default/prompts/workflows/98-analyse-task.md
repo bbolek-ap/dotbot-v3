@@ -80,7 +80,26 @@ If `needs_interview` is `true`:
    - Provide 3-5 options where applicable (Option A = recommendation)
    - Wait for answer before asking next question
 
-3. **Proceed to Phase 2** only when requirements are sufficiently clear
+3. **Capture decisions from answers:** After each answer, evaluate whether it constitutes a reusable decision (real trade-off, rejected alternatives, cross-task impact). This includes architectural, business, technical, and process decisions. If so, record it:
+   ```javascript
+   mcp__dotbot__decision_create({
+     title: "Short noun-phrase title of the decision",
+     context: "Why this question arose — the forces at play",
+     decision: "The specific choice the user made",
+     consequences: "What this constrains for this and other tasks",
+     alternatives_considered: [
+       { option: "The rejected option", reason_rejected: "Why it was rejected" }
+     ],
+     status: "accepted",
+     type: "architecture",  // one of: architecture, business, technical, process
+     impact: "medium",
+     tags: ["task-derived"],
+     related_task_ids: ["{{TASK_ID}}"]
+   })
+   ```
+   Only create decisions for answers with genuine cross-task weight — skip simple preferences or obvious defaults.
+
+4. **Proceed to Phase 2** only when requirements are sufficiently clear
 
 **Example interview question:**
 ```
@@ -183,9 +202,9 @@ Check that all task dependencies are met.
 }
 ```
 
-### Phase 5: Standards Mapping
+### Phase 5: Standards and Decision Mapping
 
-Identify which coding standards apply to this task.
+Identify which coding standards and decision constraints apply to this task.
 
 1. **List available standards:**
    ```
@@ -195,19 +214,34 @@ Identify which coding standards apply to this task.
 2. **Determine applicable standards:**
    Based on task category and files involved, select relevant standards.
 
-3. **Extract relevant sections:**
-   Note which specific sections of each standard are most relevant.
+3. **Load applicable decisions:**
+   If the task has `applicable_decisions` set, read each one:
+   ```javascript
+   mcp__dotbot__decision_get({ decision_id: "dec-XXXXXXXX" })
+   ```
+   If `applicable_decisions` is empty, call `mcp__dotbot__decision_list({ status: "accepted" })` and include any decisions whose consequences are relevant to this task's entities or category.
+   Also include any decisions you created during Phase 1.5 or Phase 8 question resolution — these are already linked to this task.
+
+4. **Extract relevant sections:**
+   Note which specific sections of each standard are most relevant. For decisions, extract `decision` and `consequences` — these are the binding constraints.
 
 **Example output:**
 ```json
 {
   "standards": {
-    "applicable": [".bot/prompts/standards/global/entity-framework.md", ".bot/prompts/standards/global/testing.md"],
+    "applicable": [".bot/prompts/standards/global/entity-framework.md"],
     "relevant_sections": {
-      "entity-framework.md": ["Configuration patterns", "Migrations"],
-      "testing.md": ["Unit test structure", "Mocking"]
+      "entity-framework.md": ["Configuration patterns", "Migrations"]
     }
-  }
+  },
+  "decisions": [
+    {
+      "id": "dec-XXXXXXXX",
+      "title": "Scope to Titan Platform Only",
+      "decision": "All implementation targets Titan only. FinApps integration is deferred.",
+      "consequences": "Do not introduce FinApps dependencies. Acceptance criteria validate Titan only."
+    }
+  ]
 }
 ```
 
@@ -374,12 +408,14 @@ mcp__dotbot__task_mark_needs_input({
 
 Then STOP and wait. Do not continue analysis until question is answered.
 
+**After each answer is received**, apply the same decision-capture check as Phase 1.5 step 3: if the answer reveals a choice with real trade-offs and cross-task implications (architectural, business, technical, or process), create a Decision record via `decision_create` with the appropriate `type`, `related_task_ids: ["{{TASK_ID}}"]`, and `tags: ["task-derived"]`.
+
 ### Phase 9: Split Proposal (If Needed)
 
 If the task is too large for a single implementation session, propose splitting.
 
 **Split criteria:**
-- Effort is XL or greater
+- Effort is {{SPLIT_THRESHOLD_EFFORT}} or higher — splitting is MANDATORY, not optional
 - Multiple independent features bundled together
 - Implementation would exceed ~25,000 tokens
 
@@ -412,6 +448,7 @@ mcp__dotbot__task_mark_analysed({
     files: { ... },
     dependencies: { ... },
     standards: { ... },
+    decisions: [ ... ],     // Decision constraints resolved in Phase 5 + any created during Phase 1.5/8 question resolution
     product_context: { ... },
     implementation: { ... }
   }
@@ -430,6 +467,9 @@ mcp__dotbot__task_mark_analysed({
 | `mcp__dotbot__task_mark_skipped` | Skip if analysis reveals blockers |
 | `mcp__dotbot__plan_get` | Check for existing implementation plan |
 | `mcp__dotbot__plan_create` | Create plan if complex task |
+| `mcp__dotbot__decision_create` | Record reusable decisions from question answers |
+| `mcp__dotbot__decision_list` | List accepted decisions for context |
+| `mcp__dotbot__decision_get` | Read a specific decision |
 
 ---
 

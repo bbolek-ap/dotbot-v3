@@ -102,12 +102,12 @@ if (-not (Test-Path $reposDir)) {
 $gitignore = Join-Path $ProjectDir ".gitignore"
 if (Test-Path $gitignore) {
     $content = Get-Content $gitignore -Raw
-    if ($content -notmatch 'repos/') {
-        Add-Content $gitignore "`nrepos/"
+    if ($content -notmatch '(?m)^/?repos/') {
+        Add-Content $gitignore "`n/repos/"
         Write-Success "Added repos/ to .gitignore"
     }
 } else {
-    Set-Content $gitignore "repos/`n"
+    Set-Content $gitignore "/repos/`n"
     Write-Success "Created .gitignore with repos/ entry"
 }
 

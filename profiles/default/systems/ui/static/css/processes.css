@@ -556,3 +556,189 @@
     padding-top: 10px;
     border-top: 1px solid var(--primary-08);
 }
+
+/* ========== DECISION GROUPS ========== */
+.decision-group {
+    margin-bottom: 16px;
+}
+
+.decision-group-header {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--color-secondary);
+    padding: 8px 12px 6px;
+    border-bottom: 1px solid var(--secondary-12);
+    font-family: var(--font-ui);
+}
+
+/* ========== DECISION ROWS ========== */
+.decision-row {
+    border: 1px solid var(--primary-08);
+    border-radius: 3px;
+    margin: 4px 8px;
+    transition: border-color 0.2s;
+}
+
+.decision-row:hover {
+    border-color: var(--primary-20);
+}
+
+.decision-row.expanded {
+    border-color: var(--primary-30);
+}
+
+.decision-row-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    min-height: 36px;
+}
+
+.decision-row-id {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+    flex-shrink: 0;
+    min-width: 90px;
+}
+
+.decision-row-title {
+    font-size: 12px;
+    color: var(--color-primary);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.decision-row-date {
+    font-size: 10px;
+    color: var(--color-muted);
+    flex-shrink: 0;
+    min-width: 80px;
+    text-align: right;
+}
+
+.decision-row-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+/* ========== DECISION STATUS BADGES ========== */
+.decision-status-badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    font-family: var(--font-ui);
+}
+
+.decision-status-proposed   { background: var(--primary-10);  color: var(--color-primary); }
+.decision-status-accepted   { background: rgb(var(--color-success-rgb, 0 200 120) / 0.12); color: var(--color-success); }
+.decision-status-deprecated { background: var(--primary-08);  color: var(--color-muted); }
+.decision-status-superseded { background: var(--primary-08);  color: var(--color-muted); }
+
+.decision-type-badge,
+.decision-impact-badge {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 2px 5px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    font-family: var(--font-ui);
+    background: var(--primary-08);
+    color: var(--color-secondary);
+}
+
+.decision-impact-badge.impact-high   { background: rgb(var(--color-error-rgb, 255 80 80) / 0.12); color: var(--color-error); }
+.decision-impact-badge.impact-medium { background: var(--primary-10); color: var(--color-primary); }
+.decision-impact-badge.impact-low    { background: var(--primary-08); color: var(--color-muted); }
+
+/* ========== DECISION DETAIL (EXPANDED INLINE) ========== */
+.decision-detail {
+    border-top: 1px solid var(--primary-10);
+    padding: 10px 12px;
+    background: var(--bg-screen);
+}
+
+.decision-detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--primary-08);
+    margin-bottom: 10px;
+}
+
+.decision-meta-item {
+    font-size: 11px;
+    color: var(--color-primary-dim);
+}
+
+.decision-meta-item b {
+    color: var(--label-color);
+    font-weight: 600;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.decision-section {
+    margin-bottom: 12px;
+}
+
+.decision-section:last-child {
+    margin-bottom: 0;
+}
+
+.decision-section-title {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-secondary);
+    margin-bottom: 4px;
+    font-family: var(--font-ui);
+}
+
+.decision-section-body {
+    font-size: 12px;
+    color: var(--color-primary-dim);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* ========== DECISION SIDEBAR SUMMARY ========== */
+.decision-summary .summary-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+}
+
+.decision-summary .summary-label {
+    font-size: 11px;
+    color: var(--label-color);
+}
+
+.decision-summary .summary-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+}
+
+.decision-summary .summary-value.active {
+    color: var(--color-success);
+}

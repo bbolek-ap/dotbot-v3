@@ -22,6 +22,12 @@ Read every file in `.bot/workspace/product/`:
 - `entity-model.md` — Data model and entity relationships
 - Any other `.md` files present (PRD, change requests, etc.)
 
+Also read accepted decisions — these constrain valid implementation approaches:
+```javascript
+mcp__dotbot__decision_list({ status: "accepted" })
+```
+Note each decision's ID, title, and consequences. When assigning `applicable_decisions` to groups in Step 5, include decisions whose consequences directly affect that group's implementation choices.
+
 ### Step 2: Identify Implementation Groups
 
 Based on the product docs, identify **5-10 natural implementation groups**. Think in terms of deployable increments — each group should bring the product closer to a working state.

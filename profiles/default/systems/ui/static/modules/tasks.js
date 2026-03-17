@@ -15,7 +15,19 @@ function initTaskClicks() {
     });
 
     // Delegate for dynamic task lists
-    document.addEventListener('click', (e) => {
+    document.addEventListener('click', async (e) => {
+        // Handle decision link clicks (from Related Decisions tags)
+        const decLink = e.target.closest('[data-decision-link]');
+        if (decLink) {
+            const decisionId = decLink.dataset.decisionLink;
+            if (decisionId && isValidDecisionId(decisionId)) {
+                switchToTab('decisions');
+                await reloadDecisions();
+                toggleDecisionExpand(decisionId);
+            }
+            return;
+        }
+
         if (e.target.closest('.roadmap-task-action') || e.target.closest('.roadmap-header-action')) {
             return;
         }
@@ -302,6 +314,21 @@ function buildOverviewSection(task) {
                 html += `<div class="skip-timestamp">${timestamp}</div>`;
             }
             html += `</div>`;
+        });
+        html += `</div></div>`;
+    }
+
+    // Related Decisions
+    const validDecisions = Array.isArray(task.applicable_decisions) ? task.applicable_decisions.filter(id => id && isValidDecisionId(id)) : [];
+    if (validDecisions.length > 0) {
+        html += `<div class="task-list-section">`;
+        html += `<div class="task-list-header">Related Decisions</div>`;
+        html += `<div class="task-tags">`;
+        validDecisions.forEach(decisionId => {
+            const dec = typeof getDecisionById === 'function' ? getDecisionById(decisionId) : null;
+            const label = dec ? `${escapeHtml(decisionId)}: ${escapeHtml(dec.title)}` : escapeHtml(decisionId);
+            const statusClass = dec ? ` tag-decision-${escapeAttr(dec.status)}` : '';
+            html += `<span class="task-tag tag-decision${statusClass}" title="${dec ? escapeAttr(dec.title) : ''}" data-decision-link="${escapeAttr(decisionId)}" style="cursor:pointer">${label}</span>`;
         });
         html += `</div></div>`;
     }

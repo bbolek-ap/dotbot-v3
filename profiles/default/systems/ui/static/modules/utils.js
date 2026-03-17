@@ -16,6 +16,32 @@ function escapeHtml(text) {
 }
 
 /**
+ * Escape a string for safe use inside HTML attribute values (quoted with ").
+ * Escapes &, <, >, ", and ' to prevent attribute breakout and XSS.
+ * @param {string} text - Text to escape
+ * @returns {string} Escaped text safe for attribute interpolation
+ */
+function escapeAttr(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
+ * Validate that a string matches the expected decision ID pattern (dec-XXXXXXXX).
+ * Use before passing IDs into DOM operations or API calls.
+ * @param {string} id - Value to validate
+ * @returns {boolean} True if valid decision ID format
+ */
+function isValidDecisionId(id) {
+    return typeof id === 'string' && /^dec-[a-f0-9]{8}$/.test(id);
+}
+
+/**
  * Set text content of element by ID
  * @param {string} id - Element ID
  * @param {string|number} text - Text to set

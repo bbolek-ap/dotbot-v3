@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Shared test utilities for dotbot-v3 integration tests.
+    Shared test utilities for dotbot integration tests.
 .DESCRIPTION
     Provides lightweight assertion functions, test project scaffolding,
     MCP server helpers, and test result tracking.

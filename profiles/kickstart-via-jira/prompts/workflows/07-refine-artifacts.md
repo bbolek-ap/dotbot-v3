@@ -15,6 +15,8 @@ After all deep dives and implementation research complete, this workflow perform
 - `mission.md` exists (from Phase 0.5)
 - `jira-context.md` exists
 
+> **Heartbeat:** This phase can run 15-30 minutes. Call `steering_heartbeat` with a status update every 5 minutes to keep the dashboard informed.
+
 ## Your Task
 
 ### Step 1: Read All Artifacts

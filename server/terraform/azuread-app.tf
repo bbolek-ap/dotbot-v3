@@ -139,10 +139,10 @@ resource "local_file" "teams_manifest" {
     version         = "1.0.${formatdate("YYYYMMDDhhmm", timestamp())}"
     id              = local.bot_app_id
     developer = {
-      name          = "IWG"
-      websiteUrl    = "https://www.iwgplc.com"
-      privacyUrl    = "https://www.iwgplc.com/privacy"
-      termsOfUseUrl = "https://www.iwgplc.com/terms"
+      name          = var.developer_name
+      websiteUrl    = var.developer_website_url
+      privacyUrl    = var.developer_privacy_url
+      termsOfUseUrl = var.developer_terms_url
     }
     name = {
       short = "Dotbot"
@@ -150,7 +150,7 @@ resource "local_file" "teams_manifest" {
     }
     description = {
       short = "Multi-choice question bot for development workflows"
-      full  = "Dotbot sends multi-choice questions to users via Teams and collects answers for the dotbot-v3 development workflow tool."
+      full  = "Dotbot sends multi-choice questions to users via Teams and collects answers for the dotbot development workflow tool."
     }
     icons = {
       outline = "outline.png"

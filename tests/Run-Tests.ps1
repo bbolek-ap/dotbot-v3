@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Test runner for dotbot-v3 integration test suite.
+    Test runner for dotbot integration test suite.
 .DESCRIPTION
     Orchestrates test layers 1-4. Use -Layer to select which layers to run.
 .PARAMETER Layer
@@ -24,7 +24,7 @@ $ErrorActionPreference = "Stop"
 
 Write-Host ""
 Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Magenta
-Write-Host "  dotbot-v3 Integration Test Suite" -ForegroundColor Magenta
+Write-Host "  dotbot Integration Test Suite" -ForegroundColor Magenta
 Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Magenta
 Write-Host ""
 
@@ -74,7 +74,10 @@ if (2 -in $layersToRun) {
     & pwsh -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\Test-TaskActions.ps1"
     $taskActionsCode = $LASTEXITCODE
 
-    $exitCode = if ($componentsCode -ne 0 -or $taskActionsCode -ne 0) { 1 } else { 0 }
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\Test-ServerStartup.ps1"
+    $serverStartupCode = $LASTEXITCODE
+
+    $exitCode = if ($componentsCode -ne 0 -or $taskActionsCode -ne 0 -or $serverStartupCode -ne 0) { 1 } else { 0 }
     $layerResults["2"] = ($exitCode -eq 0)
     if ($exitCode -ne 0) { $overallFailed = $true }
 }

@@ -84,7 +84,7 @@ Read product docs from `.bot/workspace/product/`:
 
 Each task should be 1-4 hours, independently testable, single context window.
 
-**Effort:** XS (<1h), S (1-2h), M (2-4h), L (4-8h), XL (8h+, consider splitting)
+**Effort:** XS (<1h), S (1-2h), M (2-4h), L (4-8h), XL (8h+, MUST be split into smaller tasks)
 
 **Categories:** `infrastructure`, `core`, `feature`, `enhancement`, `bugfix`, `ui-ux`
 

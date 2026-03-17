@@ -23,7 +23,7 @@ Read({ file_path: ".bot/workspace/product/briefing/jira-context.md" })
 ```
 
 Extract:
-- **Jira Key** from the metadata table (e.g., `BS-9817`)
+- **Jira Key** from the metadata table (e.g., `PROJ-1234`)
 - **Atlassian Cloud ID** from the Organisation Settings table
 
 If the Cloud ID is not in jira-context.md, discover it:

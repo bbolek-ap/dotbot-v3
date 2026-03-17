@@ -9,13 +9,13 @@
   },
   "description": {
     "short": "Multi-choice question bot for development workflows",
-    "full": "Dotbot sends multi-choice questions to users via Teams and collects answers for the dotbot-v3 development workflow tool."
+    "full": "Dotbot sends multi-choice questions to users via Teams and collects answers for the dotbot development workflow tool."
   },
   "developer": {
-    "name": "IWG",
-    "websiteUrl": "https://www.iwgplc.com",
-    "privacyUrl": "https://www.iwgplc.com/privacy",
-    "termsOfUseUrl": "https://www.iwgplc.com/terms"
+    "name": "{{DEVELOPER_NAME}}",
+    "websiteUrl": "{{DEVELOPER_WEBSITE_URL}}",
+    "privacyUrl": "{{DEVELOPER_PRIVACY_URL}}",
+    "termsOfUseUrl": "{{DEVELOPER_TERMS_URL}}"
   },
   "icons": {
     "color": "color.png",
