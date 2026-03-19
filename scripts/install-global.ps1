@@ -9,13 +9,16 @@
 
 [CmdletBinding()]
 param(
-    [switch]$DryRun
+    [switch]$DryRun,
+    [string]$SourceDir
 )
 
 $ErrorActionPreference = "Stop"
 
 $ScriptDir = $PSScriptRoot
-$SourceDir = Split-Path -Parent $ScriptDir
+if (-not $SourceDir) {
+    $SourceDir = Split-Path -Parent $ScriptDir
+}
 $BaseDir = Join-Path $HOME "dotbot"
 $BinDir = Join-Path $BaseDir "bin"
 
