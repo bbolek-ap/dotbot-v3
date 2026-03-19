@@ -429,6 +429,29 @@ function Get-DotbotInstallDir {
     return Join-Path $HOME "dotbot"
 }
 
+function Compare-IsoTimestamps {
+    <#
+    .SYNOPSIS
+        Returns $true if two ISO 8601 timestamp strings represent the same moment within a tolerance.
+    .PARAMETER Expected
+        The reference ISO 8601 timestamp string.
+    .PARAMETER Actual
+        The ISO 8601 timestamp string to compare (may be a DateTime object serialised by ConvertFrom-Json).
+    .PARAMETER ToleranceSeconds
+        Allowed difference in seconds. Defaults to 5.
+    #>
+    param(
+        [string]$Expected,
+        [string]$Actual,
+        [int]$ToleranceSeconds = 5
+    )
+
+    $styles = [System.Globalization.DateTimeStyles]::RoundtripKind
+    $expectedDt = [DateTime]::Parse($Expected, $null, $styles)
+    $actualDt   = try { [DateTime]::Parse($Actual, $null, $styles) } catch { return $false }
+    return [Math]::Abs(($expectedDt - $actualDt).TotalSeconds) -lt $ToleranceSeconds
+}
+
 Export-ModuleMember -Function @(
     'Reset-TestResults'
     'Get-TestResults'
@@ -450,4 +473,5 @@ Export-ModuleMember -Function @(
     'Send-McpInitialize'
     'Get-RepoRoot'
     'Get-DotbotInstallDir'
+    'Compare-IsoTimestamps'
 )
