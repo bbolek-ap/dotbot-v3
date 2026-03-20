@@ -203,6 +203,44 @@ try {
     Assert-True -Name "Move-TaskState throws for completely unknown task ID" `
         -Condition $threw2 -Message "Expected exception for unknown task ID"
 
+    $threw3 = $false
+    try {
+        Move-TaskState -TaskId "ts-validate-01" -FromStates @("todo") -ToState "invalid-state-xyz" | Out-Null
+    } catch {
+        $threw3 = $true
+    }
+    Assert-True -Name "Move-TaskState throws for invalid ToState name" `
+        -Condition $threw3 -Message "Expected exception for unknown state name"
+
+    $threw4 = $false
+    try {
+        Move-TaskState -TaskId "ts-validate-01" -FromStates @("not-a-state") -ToState "todo" | Out-Null
+    } catch {
+        $threw4 = $true
+    }
+    Assert-True -Name "Move-TaskState throws for invalid FromStates name" `
+        -Condition $threw4 -Message "Expected exception for unknown state name in FromStates"
+
+    Write-Host ""
+    Write-Host "  MOVE-TASKSTATE: RESERVED KEYS IN UPDATES" -ForegroundColor Cyan
+    Write-Host "  ──────────────────────────────────────────" -ForegroundColor DarkGray
+
+    New-SimpleTaskFile -Dir $todoDir -Id "ts-reserved-01" -Name "Reserved keys test" | Out-Null
+
+    $result3 = Move-TaskState -TaskId "ts-reserved-01" -FromStates @("todo") -ToState "analysing" `
+        -Updates @{ status = "done"; id = "hijacked"; created_at = "1970-01-01T00:00:00Z"; custom = "ok" }
+
+    $reservedTask = Get-Content $result3.new_path -Raw | ConvertFrom-Json
+    Assert-Equal -Name "Move-TaskState ignores reserved 'status' key in Updates" `
+        -Expected "analysing" -Actual $reservedTask.status
+    Assert-Equal -Name "Move-TaskState ignores reserved 'id' key in Updates" `
+        -Expected "ts-reserved-01" -Actual $reservedTask.id
+    Assert-True  -Name "Move-TaskState ignores reserved 'created_at' key in Updates" `
+        -Condition ($reservedTask.created_at -ne "1970-01-01T00:00:00Z") `
+        -Message "Expected created_at to remain unchanged"
+    Assert-Equal -Name "Move-TaskState still applies non-reserved keys alongside reserved ones" `
+        -Expected "ok" -Actual $reservedTask.custom
+
     Write-Host ""
     Write-Host "  MOVE-TASKSTATE: MULTI-HOP" -ForegroundColor Cyan
     Write-Host "  ──────────────────────────────────────────" -ForegroundColor DarkGray
@@ -253,6 +291,14 @@ try {
     Assert-Equal -Name "Get-TaskByIdOrSlug slug lookup returns correct task" `
         -Expected "ts-lookup-01" -Actual $bySlug.task.id
 
+    Assert-True  -Name "Get-TaskByIdOrSlug result contains file_path" `
+        -Condition ($null -ne $byId.file_path -and $byId.file_path -ne "") `
+        -Message "Expected file_path to be populated in result"
+
+    Assert-True  -Name "Get-TaskByIdOrSlug result contains status" `
+        -Condition ($null -ne $byId.status -and $byId.status -ne "") `
+        -Message "Expected status to be populated in result"
+
     $missing = Get-TaskByIdOrSlug -Identifier "definitely-not-a-task-9999"
     Assert-True -Name "Get-TaskByIdOrSlug returns null for unknown identifier" `
         -Condition ($null -eq $missing) -Message "Expected null for unknown identifier"
@@ -296,6 +342,41 @@ try {
     $autoIdResult = New-TaskRecord -Properties @{ name = "Auto ID task"; category = "feature" }
     Assert-True -Name "New-TaskRecord auto-generates ID when not provided" `
         -Condition ($null -ne $autoIdResult.task.id -and $autoIdResult.task.id -ne "")
+
+    $overrideResult = New-TaskRecord -Properties @{
+        id       = "ts-override-01"
+        name     = "Override defaults task"
+        category = "feature"
+        priority = 99
+        effort   = "XL"
+    }
+    $overrideTask = Get-Content $overrideResult.file_path -Raw | ConvertFrom-Json
+    Assert-Equal -Name "New-TaskRecord caller priority overrides default (50)" `
+        -Expected 99 -Actual $overrideTask.priority
+    Assert-Equal -Name "New-TaskRecord caller effort overrides default (M)" `
+        -Expected "XL" -Actual $overrideTask.effort
+
+    Write-Host ""
+    Write-Host "  MOVE-TASKSTATE: CANCELLED AND SPLIT STATES" -ForegroundColor Cyan
+    Write-Host "  ──────────────────────────────────────────" -ForegroundColor DarkGray
+
+    New-SimpleTaskFile -Dir $todoDir -Id "ts-cancel-01" -Name "Cancel test" | Out-Null
+    $cancelResult = Move-TaskState -TaskId "ts-cancel-01" -FromStates @("todo") -ToState "cancelled"
+    Assert-Equal -Name "Move-TaskState can move task to cancelled state" `
+        -Expected "cancelled" -Actual $cancelResult.new_status
+
+    $cancelledDir = Join-Path $tasksBaseDir "cancelled"
+    Assert-PathExists -Name "Cancelled task file exists in cancelled directory" `
+        -Path (Join-Path $cancelledDir "ts-cancel-01.json")
+
+    New-SimpleTaskFile -Dir $todoDir -Id "ts-split-01" -Name "Split test" | Out-Null
+    $splitResult = Move-TaskState -TaskId "ts-split-01" -FromStates @("todo") -ToState "split"
+    Assert-Equal -Name "Move-TaskState can move task to split state" `
+        -Expected "split" -Actual $splitResult.new_status
+
+    $splitDir = Join-Path $tasksBaseDir "split"
+    Assert-PathExists -Name "Split task file exists in split directory" `
+        -Path (Join-Path $splitDir "ts-split-01.json")
 
     Write-Host ""
     Write-Host "  UPDATE-TASKRECORD" -ForegroundColor Cyan

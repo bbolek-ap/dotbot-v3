@@ -80,6 +80,12 @@ function Move-TaskState {
         [hashtable]$Updates = @{}
     )
 
+    # Validate states against known statuses
+    $invalidStates = @($ToState) + $FromStates | Where-Object { $_ -notin $script:ValidStatuses }
+    if ($invalidStates) {
+        throw "Invalid task state(s): $($invalidStates -join ', '). Valid states are: $($script:ValidStatuses -join ', ')"
+    }
+
     $baseDir = Get-TaskStoreBaseDir
 
     # Idempotent: already in target state
@@ -108,8 +114,10 @@ function Move-TaskState {
     Set-OrAddProperty -Object $task -Name 'status'     -Value $ToState
     Set-OrAddProperty -Object $task -Name 'updated_at' -Value ((Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"))
 
-    # Caller-supplied updates (merged in)
+    # Caller-supplied updates (merged in); reserved keys are always set by Move-TaskState itself
+    $reservedKeys = @('status', 'updated_at', 'id', 'created_at')
     foreach ($key in $Updates.Keys) {
+        if ($key -in $reservedKeys) { continue }
         Set-OrAddProperty -Object $task -Name $key -Value $Updates[$key]
     }
 
@@ -242,7 +250,7 @@ function Update-TaskRecord {
     }
 
     $task           = $found.task
-    $blockedFields  = @('id', 'created_at')
+    $blockedFields  = @('id', 'created_at', 'status')
 
     foreach ($key in $Updates.Keys) {
         if ($key -in $blockedFields) { continue }
