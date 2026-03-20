@@ -108,7 +108,7 @@ function Invoke-AnalysisProcess {
             }
 
             # For analysis: check resumed tasks (answered questions) first, then todo
-            $taskResult = Get-NextTodoTask -Verbose
+            $taskResult = Get-NextTodoTask -VerboseOutput
 
             # Immediately claim task to prevent execution from picking it up
             if ($taskResult.task) {
@@ -139,7 +139,7 @@ function Invoke-AnalysisProcess {
                         $processData.last_heartbeat = (Get-Date).ToUniversalTime().ToString("o")
                         Write-ProcessFile -Id $ProcId -Data $processData -ProcessesDir $ProcessesDir
                         Reset-TaskIndex
-                        $taskResult = Get-NextTodoTask -Verbose
+                        $taskResult = Get-NextTodoTask -VerboseOutput
                         if ($taskResult.task) { $foundTask = $true; break }
 
                         if (Test-DependencyDeadlock -ProcessId $ProcId -ProcessesDir $ProcessesDir) { break }

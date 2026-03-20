@@ -76,7 +76,7 @@ function Invoke-WorkflowProcess {
     # Pre-flight: warn if main repo has uncommitted non-.bot/ files.
     try {
         $mainDirtyStatus = git -C $ProjectRoot status --porcelain 2>$null
-        $mainDirtyFiles  = @($mainDirtyStatus | Where-Object { $_ -notmatch '\.bot/' })
+        $mainDirtyFiles  = @($mainDirtyStatus | Where-Object { $_ -notmatch '\.bot/' -and $_ -notmatch '^\?\?' })
         if ($mainDirtyFiles.Count -gt 0) {
             $fileList = ($mainDirtyFiles | ForEach-Object { $_.Substring(3).Trim() }) -join ', '
             Write-Status "Pre-flight: Main repo has $($mainDirtyFiles.Count) uncommitted non-.bot/ file(s). Commit them to avoid squash-merge complications: $fileList" -Type Warn
@@ -130,7 +130,7 @@ function Invoke-WorkflowProcess {
             Write-Status "Fetching next task..." -Type Process
             Reset-TaskIndex
 
-            $taskResult = Get-NextWorkflowTask -Verbose
+            $taskResult = Get-NextWorkflowTask -VerboseOutput
 
             Write-Diag -Msg "TaskPickup: success=$($taskResult.success) hasTask=$($null -ne $taskResult.task) msg=$($taskResult.message)"
 
@@ -154,7 +154,7 @@ function Invoke-WorkflowProcess {
                         $processData.last_heartbeat = (Get-Date).ToUniversalTime().ToString("o")
                         Write-ProcessFile -Id $ProcId -Data $processData -ProcessesDir $ProcessesDir
                         Reset-TaskIndex
-                        $taskResult = Get-NextWorkflowTask -Verbose
+                        $taskResult = Get-NextWorkflowTask -VerboseOutput
                         if ($taskResult.task) { $foundTask = $true; break }
 
                         if (Test-DependencyDeadlock -ProcessId $ProcId -ProcessesDir $ProcessesDir) { break }

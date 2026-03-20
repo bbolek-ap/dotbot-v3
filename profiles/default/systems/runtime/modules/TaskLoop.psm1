@@ -24,7 +24,7 @@ function Add-YamlFrontMatter {
 function Get-NextTodoTask {
     [CmdletBinding()]
     [OutputType([hashtable])]
-    param([switch]$Verbose)
+    param([switch]$VerboseOutput)
 
     # First priority: check for analysing tasks that came back from needs-input
     $index = Get-TaskIndex
@@ -43,7 +43,7 @@ function Get-NextTodoTask {
                         effort = $content.effort
                         category = $content.category
                     }
-                    if ($Verbose.IsPresent) {
+                    if ($VerboseOutput.IsPresent) {
                         $taskObj.description = $content.description
                         $taskObj.dependencies = $content.dependencies
                         $taskObj.acceptance_criteria = $content.acceptance_criteria
@@ -71,7 +71,7 @@ function Get-NextTodoTask {
     }
 
     # Second priority: get next todo task
-    $result = Invoke-TaskGetNext -Arguments @{ prefer_analysed = $false; verbose = $Verbose.IsPresent }
+    $result = Invoke-TaskGetNext -Arguments @{ prefer_analysed = $false; verbose = $VerboseOutput.IsPresent }
     if ($result.task -and $result.task.status -eq 'todo') {
         return $result
     }
@@ -86,7 +86,7 @@ function Get-NextTodoTask {
 function Get-NextWorkflowTask {
     [CmdletBinding()]
     [OutputType([hashtable])]
-    param([switch]$Verbose)
+    param([switch]$VerboseOutput)
 
     # First priority: check for analysing tasks that came back from needs-input
     $index = Get-TaskIndex
@@ -105,7 +105,7 @@ function Get-NextWorkflowTask {
                         effort = $content.effort
                         category = $content.category
                     }
-                    if ($Verbose.IsPresent) {
+                    if ($VerboseOutput.IsPresent) {
                         $taskObj.description = $content.description
                         $taskObj.dependencies = $content.dependencies
                         $taskObj.acceptance_criteria = $content.acceptance_criteria
@@ -133,7 +133,7 @@ function Get-NextWorkflowTask {
     }
 
     # Second priority: prefer analysed tasks (ready for execution), then todo
-    $result = Invoke-TaskGetNext -Arguments @{ prefer_analysed = $true; verbose = $Verbose.IsPresent }
+    $result = Invoke-TaskGetNext -Arguments @{ prefer_analysed = $true; verbose = $VerboseOutput.IsPresent }
     return $result
 }
 
