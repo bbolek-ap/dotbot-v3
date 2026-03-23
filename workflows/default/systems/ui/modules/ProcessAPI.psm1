@@ -392,7 +392,7 @@ function Start-ProcessLaunch {
 
 function Start-ConcurrentWorkflow {
     param(
-        [Parameter(Mandatory)] [string]$WorkflowName,
+        [string]$WorkflowName,
         [string]$Description,
         [int]$MaxConcurrent = 1
     )
