@@ -34,6 +34,7 @@ function Write-ProcessFile {
                 Start-Sleep -Milliseconds (50 * ($r + 1))
             } else {
                 Write-Diag -Msg "Write-ProcessFile FAILED for $Id after $maxRetries retries: $_" -DiagLogPath $script:DiagLogPath
+                throw "Write-ProcessFile failed for '$Id' after $maxRetries retries: $_"
             }
         }
     }
@@ -122,12 +123,24 @@ function Test-ProcessLock {
 
 function Set-ProcessLock {
     [CmdletBinding()]
+    [OutputType([bool])]
     param(
         [Parameter(Mandatory)][string]$LockType,
         [Parameter(Mandatory)][string]$ControlDir
     )
     $lockPath = Join-Path $ControlDir "launch-$LockType.lock"
-    $PID.ToString() | Set-Content $lockPath -NoNewline -Encoding utf8NoBOM
+    try {
+        $stream = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        try {
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($PID.ToString())
+            $stream.Write($bytes, 0, $bytes.Length)
+        } finally {
+            $stream.Close()
+        }
+        return $true
+    } catch [System.IO.IOException] {
+        return $false
+    }
 }
 
 function Remove-ProcessLock {
@@ -137,7 +150,15 @@ function Remove-ProcessLock {
         [Parameter(Mandatory)][string]$ControlDir
     )
     $lockPath = Join-Path $ControlDir "launch-$LockType.lock"
-    Remove-Item $lockPath -Force -ErrorAction SilentlyContinue
+    if (Test-Path $lockPath) {
+        $lockPid = Get-Content $lockPath -Raw -ErrorAction SilentlyContinue
+        if ($lockPid) { $lockPid = $lockPid.Trim() }
+        if ($lockPid -eq $PID.ToString()) {
+            Remove-Item $lockPath -Force -ErrorAction SilentlyContinue
+        } else {
+            Write-Warning "Lock file PID ($lockPid) does not match current process ($PID). Skipping removal."
+        }
+    }
 }
 
 function Test-Preflight {

@@ -18,7 +18,13 @@ function Add-YamlFrontMatter {
     }
     $yaml += "---`n`n"
     $existing = Get-Content $FilePath -Raw
-    ($yaml + $existing) | Set-Content -Path $FilePath -Encoding utf8NoBOM -NoNewline
+    # If file already has YAML front matter, replace it; otherwise prepend
+    if ($existing -match '(?s)^---\r?\n.*?\r?\n---\r?\n') {
+        $body = $existing -replace '(?s)^---\r?\n.*?\r?\n---\r?\n+', ''
+        ($yaml + $body) | Set-Content -Path $FilePath -Encoding utf8NoBOM -NoNewline
+    } else {
+        ($yaml + $existing) | Set-Content -Path $FilePath -Encoding utf8NoBOM -NoNewline
+    }
 }
 
 function Get-NextTodoTask {

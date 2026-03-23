@@ -205,12 +205,12 @@ if (-not $preflight.passed) {
 }
 
 # --- Single-instance guard ---
-if (Test-ProcessLock -LockType $Type -ControlDir $controlDir) {
-    $existingPid = (Get-Content (Join-Path $controlDir "launch-$Type.lock") -Raw).Trim()
+if (-not (Set-ProcessLock -LockType $Type -ControlDir $controlDir)) {
+    $existingPid = (Get-Content (Join-Path $controlDir "launch-$Type.lock") -Raw -ErrorAction SilentlyContinue)
+    if ($existingPid) { $existingPid = $existingPid.Trim() }
     Write-Warning "Another $Type process is already running (PID $existingPid). Exiting."
     exit 1
 }
-Set-ProcessLock -LockType $Type -ControlDir $controlDir
 
 # --- Initialize Process ---
 $procId = if ($ProcessId) { $ProcessId } else { New-ProcessId }

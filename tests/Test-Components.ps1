@@ -1663,6 +1663,143 @@ if (Test-Path $productApiModule) {
     Write-TestResult -Name "ProductAPI direct tests" -Status Skip -Message "Module not found at $productApiModule"
 }
 # ═══════════════════════════════════════════════════════════════════
+# PR #78 FIXES: ATOMIC LOCKS, WRITE FAILURE, YAML DEDUP, TYPE WARN
+# ═══════════════════════════════════════════════════════════════════
+
+$repoRoot = Get-RepoRoot
+$runtimeModulesDir = Join-Path $repoRoot "profiles\default\systems\runtime\modules"
+Import-Module (Join-Path $runtimeModulesDir "ProcessRegistry.psm1") -Force
+Import-Module (Join-Path $runtimeModulesDir "TaskLoop.psm1") -Force
+Import-Module (Join-Path $runtimeModulesDir "DotBotTheme.psm1") -Force -ErrorAction SilentlyContinue
+
+$prFixDir = Join-Path ([System.IO.Path]::GetTempPath()) "dotbot-test-prfixes-$([System.Guid]::NewGuid().ToString().Substring(0,8))"
+New-Item -ItemType Directory -Path $prFixDir -Force | Out-Null
+
+try {
+
+    # --- ATOMIC PROCESS LOCK ---
+    Write-Host ""
+    Write-Host "  ATOMIC PROCESS LOCK" -ForegroundColor Cyan
+    Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+    $lockDir = Join-Path $prFixDir "locks"
+    New-Item -ItemType Directory -Path $lockDir -Force | Out-Null
+
+    $result = Set-ProcessLock -LockType "test" -ControlDir $lockDir
+    Assert-True -Name "Set-ProcessLock returns true on first acquire" -Condition ($result -eq $true)
+
+    $lockPath = Join-Path $lockDir "launch-test.lock"
+    $lockContent = (Get-Content $lockPath -Raw).Trim()
+    Assert-Equal -Name "Lock file contains current PID" -Expected $PID.ToString() -Actual $lockContent
+
+    $result2 = Set-ProcessLock -LockType "test" -ControlDir $lockDir
+    Assert-True -Name "Set-ProcessLock returns false when lock exists" -Condition ($result2 -eq $false)
+
+    Remove-ProcessLock -LockType "test" -ControlDir $lockDir
+    Assert-PathNotExists -Name "Remove-ProcessLock removes own lock" -Path $lockPath
+
+    $lockDir2 = Join-Path $prFixDir "locks2"
+    New-Item -ItemType Directory -Path $lockDir2 -Force | Out-Null
+    $fakeLockPath = Join-Path $lockDir2 "launch-foreign.lock"
+    "99999" | Set-Content $fakeLockPath -NoNewline -Encoding utf8NoBOM
+    Remove-ProcessLock -LockType "foreign" -ControlDir $lockDir2 3>$null
+    Assert-PathExists -Name "Remove-ProcessLock skips lock with different PID" -Path $fakeLockPath
+
+    # --- WRITE-PROCESSFILE THROWS ON FAILURE ---
+    Write-Host ""
+    Write-Host "  WRITE-PROCESSFILE THROWS ON FAILURE" -ForegroundColor Cyan
+    Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+    $procDir = Join-Path $prFixDir "processes"
+    New-Item -ItemType Directory -Path $procDir -Force | Out-Null
+    try {
+        Write-ProcessFile -Id "test-001" -Data @{ id = "test-001"; status = "running" } -ProcessesDir $procDir
+        $written = Get-Content (Join-Path $procDir "test-001.json") -Raw | ConvertFrom-Json
+        Assert-Equal -Name "Write-ProcessFile writes valid JSON" -Expected "running" -Actual $written.status
+    } catch {
+        Write-TestResult -Name "Write-ProcessFile writes valid JSON" -Status Fail -Message $_.Exception.Message
+    }
+
+    $threw = $false
+    try {
+        Write-ProcessFile -Id "fail-001" -Data @{ id = "fail" } -ProcessesDir (Join-Path $prFixDir "nonexistent\deep\path")
+    } catch {
+        $threw = $true
+    }
+    Assert-True -Name "Write-ProcessFile throws after retries exhausted" -Condition $threw
+
+    # --- YAML FRONT MATTER DEDUPLICATION ---
+    Write-Host ""
+    Write-Host "  YAML FRONT MATTER DEDUPLICATION" -ForegroundColor Cyan
+    Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+    $plainFile = Join-Path $prFixDir "plain.md"
+    "Some content here" | Set-Content $plainFile -Encoding utf8NoBOM -NoNewline
+    Add-YamlFrontMatter -FilePath $plainFile -Metadata @{ title = "Hello" }
+    $content = Get-Content $plainFile -Raw
+    $fmCount = ([regex]::Matches($content, '^---', 'Multiline')).Count
+    Assert-Equal -Name "Prepends front matter to plain file" -Expected 2 -Actual $fmCount
+
+    Add-YamlFrontMatter -FilePath $plainFile -Metadata @{ title = "Updated" }
+    $content2 = Get-Content $plainFile -Raw
+    $fmCount2 = ([regex]::Matches($content2, '^---', 'Multiline')).Count
+    Assert-Equal -Name "No duplicate front matter on second call" -Expected 2 -Actual $fmCount2
+    Assert-True -Name "Body content preserved after replace" -Condition ($content2 -match 'Some content here')
+    Assert-True -Name "Updated metadata is present" -Condition ($content2 -match 'title: "Updated"')
+
+    Add-YamlFrontMatter -FilePath $plainFile -Metadata @{ title = "Third" }
+    $content3 = Get-Content $plainFile -Raw
+    $fmCount3 = ([regex]::Matches($content3, '^---', 'Multiline')).Count
+    Assert-Equal -Name "Triple add still has exactly 2 --- delimiters" -Expected 2 -Actual $fmCount3
+
+    # --- WRITE-STATUS -TYPE VALIDATION ---
+    Write-Host ""
+    Write-Host "  WRITE-STATUS -TYPE VALIDATION" -ForegroundColor Cyan
+    Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+    $warnOk = $true
+    try { Write-Status "Test warning" -Type Warn 6>$null } catch { $warnOk = $false }
+    Assert-True -Name "Write-Status accepts -Type Warn" -Condition $warnOk
+
+    $warningRejected = $false
+    try { Write-Status "Test warning" -Type Warning 6>$null } catch { $warningRejected = $true }
+    Assert-True -Name "Write-Status rejects -Type Warning" -Condition $warningRejected
+
+    $execContent = Get-Content (Join-Path $runtimeModulesDir "ProcessTypes\Invoke-ExecutionProcess.ps1") -Raw
+    $workflowContent = Get-Content (Join-Path $runtimeModulesDir "ProcessTypes\Invoke-WorkflowProcess.ps1") -Raw
+    Assert-True -Name "ExecutionProcess has no -Type Warning" -Condition ($execContent -notmatch '-Type\s+Warning')
+    Assert-True -Name "WorkflowProcess has no -Type Warning" -Condition ($workflowContent -notmatch '-Type\s+Warning')
+
+    # --- SESSION CLEANUP IN PROCESS TYPES ---
+    Write-Host ""
+    Write-Host "  SESSION CLEANUP IN PROCESS TYPES" -ForegroundColor Cyan
+    Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+    $promptContent = Get-Content (Join-Path $runtimeModulesDir "ProcessTypes\Invoke-PromptProcess.ps1") -Raw
+    $analyseContent = Get-Content (Join-Path $runtimeModulesDir "ProcessTypes\Invoke-AnalyseProcess.ps1") -Raw
+    Assert-True -Name "PromptProcess has Remove-ProviderSession" -Condition ($promptContent -match 'Remove-ProviderSession')
+    Assert-True -Name "AnalyseProcess has Remove-ProviderSession" -Condition ($analyseContent -match 'Remove-ProviderSession')
+    Assert-True -Name "PromptProcess cleanup in finally block" -Condition ($promptContent -match '(?s)finally\s*\{[^}]*Remove-ProviderSession')
+    Assert-True -Name "AnalyseProcess cleanup in finally block" -Condition ($analyseContent -match '(?s)finally\s*\{[^}]*Remove-ProviderSession')
+
+    # --- LAUNCH-PROCESS ATOMIC LOCK INTEGRATION ---
+    Write-Host ""
+    Write-Host "  LAUNCH-PROCESS ATOMIC LOCK INTEGRATION" -ForegroundColor Cyan
+    Write-Host "  ────────────────────────────────────────────" -ForegroundColor DarkGray
+
+    $launchContent = Get-Content (Join-Path $repoRoot "profiles\default\systems\runtime\launch-process.ps1") -Raw
+    Assert-True -Name "launch-process uses atomic Set-ProcessLock return value" `
+        -Condition ($launchContent -match 'if\s*\(\s*-not\s*\(Set-ProcessLock')
+    Assert-True -Name "launch-process removed old Test-ProcessLock guard" `
+        -Condition ($launchContent -notmatch 'if\s*\(Test-ProcessLock.*\)\s*\{[\s\S]*?Set-ProcessLock')
+
+} finally {
+    if (Test-Path $prFixDir) {
+        Remove-Item $prFixDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# ═══════════════════════════════════════════════════════════════════
 # CLEANUP
 # ═══════════════════════════════════════════════════════════════════
 

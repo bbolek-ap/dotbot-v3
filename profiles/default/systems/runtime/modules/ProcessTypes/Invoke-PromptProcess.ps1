@@ -85,6 +85,9 @@ $Prompt
         $processData.error = $_.Exception.Message
         $processData.heartbeat_status = "Failed: $($_.Exception.Message)"
         Write-Status "Process failed: $($_.Exception.Message)" -Type Error
+    } finally {
+        $projectRoot = Split-Path $BotRoot -Parent
+        try { Remove-ProviderSession -SessionId $ClaudeSessionId -ProjectRoot $projectRoot | Out-Null } catch {}
     }
 
     Write-ProcessFile -Id $ProcId -Data $processData -ProcessesDir $ProcessesDir
