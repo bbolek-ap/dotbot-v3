@@ -403,6 +403,7 @@ function Update-TaskIndex {
 
         foreach ($file in $files) {
             try {
+                if (-not (Test-Path $file.FullName)) { continue }
                 $content = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
                 $entry = [PSCustomObject]@{
                     id = $content.id
