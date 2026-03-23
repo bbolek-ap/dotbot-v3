@@ -1,6 +1,12 @@
 # Core Helper Functions
 # Essential utilities for all MCP tools
 
+# Import DotBotLog if available (non-fatal if missing)
+$_dotBotLogPath = Join-Path (Split-Path -Parent $PSScriptRoot) "ui\modules\DotBotLog.psm1"
+if (Test-Path $_dotBotLogPath) {
+    Import-Module $_dotBotLogPath -Force
+}
+
 #region Solution Discovery
 
 function Find-SolutionRoot {
@@ -11,9 +17,9 @@ function Find-SolutionRoot {
     param(
         [string]$StartPath = $PWD.Path
     )
-    
+
     $current = Get-Item -Path $StartPath -ErrorAction SilentlyContinue
-    
+
     while ($current) {
         $botPath = Join-Path $current.FullName '.bot'
         if (Test-Path $botPath -PathType Container) {
@@ -21,7 +27,7 @@ function Find-SolutionRoot {
         }
         $current = $current.Parent
     }
-    
+
     return $null
 }
 
@@ -54,7 +60,7 @@ function New-ErrorObject {
         [string]$Path = $null,
         [hashtable]$Details = $null
     )
-    
+
     $error = @{
         code = $Code
         message = $Message
@@ -122,12 +128,12 @@ function New-EnvelopeResponse {
         [string]$CorrelationId = $null,
         [string]$WriteTo = $null
     )
-    
+
     # Auto-compute status based on errors and warnings
-    $status = if ($Errors.Count -gt 0) { "error" } 
-              elseif ($Warnings.Count -gt 0) { "warning" } 
+    $status = if ($Errors.Count -gt 0) { "error" }
+              elseif ($Warnings.Count -gt 0) { "warning" }
               else { "ok" }
-    
+
     $response = @{
         schema_id = "dotbot-mcp-response@1"
         tool = $Tool
@@ -143,13 +149,55 @@ function New-EnvelopeResponse {
             source = $Source
         }
     }
-    
+
     if ($Host) { $response.audit.host = $Host }
     if ($CorrelationId) { $response.audit.correlation_id = $CorrelationId }
     if ($WriteTo) { $response.audit.write_to = $WriteTo }
     if ($Intent) { $response.intent = $Intent }
     if ($Actions) { $response.actions = $Actions }
-    
+
+    # Log errors to structured error log
+    if ($Errors.Count -gt 0 -and (Get-Command Write-BotLog -ErrorAction SilentlyContinue)) {
+        foreach ($err in $Errors) {
+            # Normalize error objects: support hashtables with 'message'/'code' keys,
+            # objects with message/code properties, and generic objects via ToString().
+            $errMsg = $null
+            $errCode = $null
+
+            if ($null -ne $err) {
+                if ($err -is [hashtable]) {
+                    if ($err.ContainsKey('message')) {
+                        $errMsg = $err['message']
+                    }
+                    if ($err.ContainsKey('code')) {
+                        $errCode = $err['code']
+                    }
+                }
+                else {
+                    # Check for properties before accessing to avoid relying on shape assumptions
+                    if ($err.PSObject -and $err.PSObject.Properties.Match('message').Count -gt 0) {
+                        $errMsg = $err.message
+                    }
+                    if ($err.PSObject -and $err.PSObject.Properties.Match('code').Count -gt 0) {
+                        $errCode = $err.code
+                    }
+                }
+
+                if (-not $errMsg) {
+                    $errMsg = $err.ToString()
+                }
+            }
+
+            if (-not $errMsg) {
+                $errMsg = 'Unknown error'
+            }
+            if (-not $errCode) {
+                $errCode = 'TOOL_ERROR'
+            }
+            Write-BotLog -Level Error -Message "Tool '$Tool' error: $errMsg" -Context @{ source = 'mcp-tool'; error_code = $errCode }
+        }
+    }
+
     return $response
 }
 
@@ -162,7 +210,7 @@ function Assert-EnvelopeSchema {
         [Parameter(Mandatory)]
         [hashtable]$Response
     )
-    
+
     # Basic validation
     $required = @('schema_id', 'tool', 'version', 'status', 'summary', 'data', 'warnings', 'errors', 'audit')
     foreach ($field in $required) {
@@ -170,11 +218,11 @@ function Assert-EnvelopeSchema {
             throw "Missing required field: $field"
         }
     }
-    
+
     if ($Response.status -notin @('ok', 'warning', 'error')) {
         throw "Invalid status: $($Response.status)"
     }
-    
+
     # Validate audit required fields
     $auditRequired = @('timestamp', 'duration_ms', 'source')
     foreach ($field in $auditRequired) {
@@ -182,7 +230,7 @@ function Assert-EnvelopeSchema {
             throw "Missing required audit field: $field"
         }
     }
-    
+
     return $true
 }
 

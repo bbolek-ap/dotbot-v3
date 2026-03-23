@@ -24,6 +24,12 @@ function Initialize-StateBuilder {
     $script:Config.BotRoot = $BotRoot
     $script:Config.ControlDir = $ControlDir
     $script:Config.ProcessesDir = $ProcessesDir
+
+    # Import DotBotLog for error summary in state
+    $dotBotLogPath = Join-Path $BotRoot "systems\ui\modules\DotBotLog.psm1"
+    if (Test-Path $dotBotLogPath) {
+        Import-Module $dotBotLogPath -Force
+    }
 }
 
 function Get-RoadmapOverviewDependencyMap {
@@ -629,6 +635,25 @@ function Get-BotState {
         instances = $instances
         steering = $steeringStatus
         product_docs = @(Get-ChildItem -Path (Join-Path $botRoot "workspace\product") -Filter "*.md" -File -Recurse -ErrorAction SilentlyContinue).Count
+        error_summary = $(
+            $errorSummary = $null
+            if (Get-Command Get-DotBotLogSummary -ErrorAction SilentlyContinue) {
+                $errorSummary = Get-DotBotLogSummary
+            }
+
+            if ($null -eq $errorSummary) {
+                # Fallback structure when Get-DotBotLogSummary is unavailable.
+                # Downstream consumers should rely only on these documented properties.
+                $errorSummary = @{
+                    total     = 0
+                    by_level  = @{}
+                    by_source = @{}
+                    recent    = @()
+                }
+            }
+
+            $errorSummary
+        )
     }
 
     # Cache the result

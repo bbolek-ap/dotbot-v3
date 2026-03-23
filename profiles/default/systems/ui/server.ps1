@@ -94,7 +94,6 @@ Import-Module (Join-Path $PSScriptRoot "modules\ProcessAPI.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "modules\StateBuilder.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "modules\NotificationPoller.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "modules\DecisionAPI.psm1") -Force
-
 # Initialize all domain modules
 Initialize-FileWatchers -BotRoot $botRoot
 Initialize-GitAPI -ProjectRoot $projectRoot -BotRoot $botRoot
@@ -107,7 +106,9 @@ Initialize-TaskAPI -BotRoot $botRoot -ProjectRoot $projectRoot
 Initialize-ProcessAPI -ProcessesDir $processesDir -BotRoot $botRoot -ControlDir $controlDir
 Initialize-StateBuilder -BotRoot $botRoot -ControlDir $controlDir -ProcessesDir $processesDir
 Initialize-NotificationPoller -BotRoot $botRoot
-Initialize-DecisionAPI -BotRoot $botRoot
+
+# Import DotBotLog AFTER Initialize calls (StateBuilder's -Force re-import can break earlier imports)
+Import-Module (Join-Path $PSScriptRoot "modules\DotBotLog.psm1") -Force
 
 # Request counter for single-line logging
 $script:requestCount = 0
@@ -905,6 +906,50 @@ try {
                     $position = if ($request.QueryString["position"]) { [long]$request.QueryString["position"] } else { 0L }
                     $tailLines = if ($request.QueryString["tail"]) { [int]$request.QueryString["tail"] } else { 0 }
                     $content = Get-ActivityTail -Position $position -TailLines $tailLines | ConvertTo-Json -Depth 10 -Compress
+                    break
+                }
+
+                # --- Logs ---
+
+                "/api/logs" {
+                    $contentType = "application/json; charset=utf-8"
+                    if ($method -eq "GET") {
+                        $limit = 50; $offset = 0
+                        $parsedVal = 0
+                        if ($request.QueryString["limit"] -and [int]::TryParse($request.QueryString["limit"], [ref]$parsedVal) -and $parsedVal -gt 0) {
+                            $limit = [Math]::Min($parsedVal, 500)
+                        }
+                        if ($request.QueryString["offset"] -and [int]::TryParse($request.QueryString["offset"], [ref]$parsedVal) -and $parsedVal -ge 0) {
+                            $offset = $parsedVal
+                        }
+                        $source = $request.QueryString["source"]
+                        $level = $request.QueryString["level"]
+                        $since = $request.QueryString["since"]
+                        $result = Read-DotBotLog -Limit $limit -Offset $offset -Source $source -Level $level -Since $since
+                        $summary = Get-DotBotLogSummary
+                        $content = (@{ success = $true; entries = $result.entries; total = $result.total; summary = $summary }) | ConvertTo-Json -Depth 10 -Compress
+                    } else {
+                        $statusCode = 405
+                        $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
+                    }
+                    break
+                }
+
+                "/api/logs/summary" {
+                    $contentType = "application/json; charset=utf-8"
+                    $content = (@{ success = $true; summary = (Get-DotBotLogSummary) }) | ConvertTo-Json -Depth 5 -Compress
+                    break
+                }
+
+                "/api/logs/clear" {
+                    $contentType = "application/json; charset=utf-8"
+                    if ($method -eq "POST") {
+                        $result = Clear-DotBotLog
+                        $content = (@{ success = $result.success; message = $result.message }) | ConvertTo-Json -Compress
+                    } else {
+                        $statusCode = 405
+                        $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
+                    }
                     break
                 }
 

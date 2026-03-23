@@ -59,6 +59,7 @@
                     <button class="tab" data-tab="processes">Processes</button>
                     <button class="tab" data-tab="decisions">Decisions</button>
                     <button class="tab" data-tab="workflow">Workflow</button>
+                    <button class="tab" data-tab="errors">Logs <span class="error-badge hidden" id="error-badge">0</span></button>
                     <button class="tab" data-tab="settings">Settings</button>
                 </div>
                 <button class="editor-btn dimmed" id="editor-btn" title="Configure editor" aria-label="Configure editor">
@@ -343,6 +344,26 @@
                     <div id="prompts-sidebar">
                         <!-- Dynamically populated based on /api/prompts/directories -->
                         <div class="loading-state">Loading prompt directories...</div>
+                    </div>
+                </div>
+
+                <!-- Logs Context -->
+                <div class="context-panel hidden" data-context="errors">
+                    <div class="sidebar-section">
+                        <div class="sidebar-header">
+                            <span class="sidebar-title">◈ Log</span>
+                        </div>
+                        <div class="sidebar-content">
+                            <div class="error-stats" id="error-sidebar-stats">
+                                <div class="stat-row"><span class="stat-label">Total</span><span class="stat-value" id="error-stat-total">0</span></div>
+                                <div class="stat-row"><span class="stat-label">Fatal</span><span class="stat-value" id="error-stat-critical">0</span></div>
+                                <div class="stat-row"><span class="stat-label">Error</span><span class="stat-value" id="error-stat-error">0</span></div>
+                                <div class="stat-row"><span class="stat-label">Warn</span><span class="stat-value" id="error-stat-warning">0</span></div>
+                                <div class="stat-row"><span class="stat-label">Info</span><span class="stat-value" id="error-stat-info">0</span></div>
+                                <div class="stat-row"><span class="stat-label">Debug</span><span class="stat-value" id="error-stat-debug">0</span></div>
+                            </div>
+                            <div class="error-sources" id="error-sidebar-sources"></div>
+                        </div>
                     </div>
                 </div>
 
@@ -689,6 +710,43 @@
                                     <div class="doc-placeholder">Select a document from the left panel</div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Logs Tab -->
+                    <div class="tab-pane" id="tab-errors">
+                        <div class="errors-container">
+                            <div class="errors-toolbar">
+                                <div class="errors-filters">
+                                    <select class="errors-filter-select" id="error-filter-level">
+                                        <option value="">All Levels</option>
+                                        <option value="fatal">Fatal</option>
+                                        <option value="error">Error</option>
+                                        <option value="warn">Warn</option>
+                                        <option value="info">Info</option>
+                                        <option value="debug">Debug</option>
+                                    </select>
+                                    <select class="errors-filter-select" id="error-filter-source">
+                                        <option value="">All Sources</option>
+                                        <option value="claude-cli">Claude CLI</option>
+                                        <option value="mcp-tool">MCP Tool</option>
+                                        <option value="runtime">Runtime</option>
+                                        <option value="process">Process</option>
+                                        <option value="worktree">Worktree</option>
+                                        <option value="verification">Verification</option>
+                                        <option value="ui-server">UI Server</option>
+                                    </select>
+                                </div>
+                                <div class="errors-actions">
+                                    <button class="ctrl-btn-xs" id="errors-refresh-btn" title="Refresh logs">Refresh</button>
+                                    <button class="ctrl-btn-xs danger" id="errors-clear-btn" title="Clear all logs">Clear Log</button>
+                                </div>
+                            </div>
+                            <div class="errors-summary" id="errors-summary"></div>
+                            <div class="errors-list" id="errors-list">
+                                <div class="errors-placeholder">No log entries recorded</div>
+                            </div>
+                            <div class="errors-pagination" id="errors-pagination"></div>
                         </div>
                     </div>
 
@@ -1572,6 +1630,7 @@
     <script src="modules/polling.js"></script>
     <script src="modules/ui-updates.js"></script>
     <script src="modules/actions.js"></script>
+    <script src="modules/errors.js"></script>
     <script src="modules/notifications.js"></script>
     <script src="modules/aether.js"></script>
     <script src="modules/decisions.js"></script>

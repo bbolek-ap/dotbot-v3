@@ -1308,6 +1308,247 @@
     padding-bottom: 0;
 }
 
+/* ========== ERRORS TAB ========== */
+
+.errors-container {
+    max-width: 1000px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.errors-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.errors-filters {
+    display: flex;
+    gap: 8px;
+}
+
+.errors-filter-select {
+    background: var(--color-bg-secondary);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    padding: 4px 8px;
+    font-size: 11px;
+    font-family: inherit;
+    border-radius: 2px;
+}
+
+.errors-filter-select:focus {
+    outline: 1px solid var(--color-primary);
+}
+
+.errors-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.errors-summary-bar {
+    display: flex;
+    gap: 12px;
+    padding: 6px 10px;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
+    font-size: 11px;
+}
+
+.errors-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.errors-placeholder {
+    padding: 24px;
+    text-align: center;
+    color: var(--color-text-dim);
+    font-size: 12px;
+}
+
+.error-entry {
+    padding: 8px 10px;
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
+    font-size: 11px;
+    transition: border-color 0.15s;
+}
+
+.error-entry.has-stack {
+    cursor: pointer;
+}
+
+.error-entry:hover {
+    border-color: var(--color-primary-dim);
+}
+
+.error-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+.error-level {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1px 5px;
+    border-radius: 2px;
+}
+
+.error-level-fatal {
+    color: #ff3333;
+    background: rgba(255, 51, 51, 0.15);
+}
+
+.error-level-error {
+    color: var(--color-error, #ff6b6b);
+    background: rgba(255, 107, 107, 0.1);
+}
+
+.error-level-warn {
+    color: var(--color-warning, #ffaa33);
+    background: rgba(255, 170, 51, 0.1);
+}
+
+.error-level-info {
+    color: var(--color-info, #5bc0de);
+    background: rgba(91, 192, 222, 0.1);
+}
+
+.error-level-debug {
+    color: var(--color-muted, #888);
+    background: rgba(136, 136, 136, 0.08);
+}
+
+.error-source {
+    font-size: 10px;
+    color: var(--color-secondary);
+    font-weight: 600;
+}
+
+.error-process-type {
+    font-size: 10px;
+    color: var(--color-text-dim);
+}
+
+.error-task-id {
+    font-size: 10px;
+    color: var(--color-primary-dim);
+    font-family: monospace;
+}
+
+.error-code {
+    font-size: 9px;
+    color: var(--color-text-dim);
+    padding: 0 4px;
+    background: var(--color-bg);
+    border-radius: 2px;
+    font-family: monospace;
+}
+
+.error-time {
+    font-size: 10px;
+    color: var(--color-text-dim);
+    margin-left: auto;
+}
+
+.error-message {
+    color: var(--color-text);
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.error-stack {
+    margin-top: 6px;
+    padding: 6px 8px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 2px;
+    overflow-x: auto;
+}
+
+.error-stack pre {
+    margin: 0;
+    font-size: 10px;
+    color: var(--color-text-dim);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.errors-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+}
+
+.errors-count {
+    font-size: 11px;
+    color: var(--color-text-dim);
+}
+
+/* Error badge on tab */
+.error-badge {
+    display: inline-block;
+    min-width: 16px;
+    height: 16px;
+    line-height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--color-error, #ff6b6b);
+    color: #000;
+    font-size: 9px;
+    font-weight: 700;
+    text-align: center;
+    vertical-align: middle;
+    margin-left: 4px;
+}
+
+/* Error sidebar stats */
+.error-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 0;
+}
+
+.error-stats .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+}
+
+.error-sources {
+    padding-top: 8px;
+}
+
+.error-sources .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+}
+
+.sidebar-subheader {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-dim);
+    margin-bottom: 4px;
+}
+
 /* ========== SETTINGS TAB ========== */
 .settings-container {
     max-width: 800px;
