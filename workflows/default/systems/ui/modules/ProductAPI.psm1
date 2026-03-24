@@ -744,11 +744,11 @@ function Get-KickstartStatus {
     $procPhaseMap = @{}
     if ($latestProc.phases -and $latestProc.phases.Count -gt 0) {
         foreach ($pp in $latestProc.phases) {
-            $procPhaseMap[$pp.id] = $pp
+            if ($pp.id) { $procPhaseMap[$pp.id] = $pp }
         }
     }
 
-    $phases = @($kickstartPhases | ForEach-Object {
+    $phases = @($kickstartPhases | Where-Object { $_.id } | ForEach-Object {
         $phaseId   = $_.id
         $phaseName = $_.name
         $phaseType = if ($_.type) { $_.type } else { "llm" }

@@ -781,9 +781,46 @@ Review all context above. Decide whether to write clarification-questions.json (
             Write-ProcessFile -Id $ProcessId -Data $processData
             Write-ProcessActivity -Id $ProcessId -ActivityType "text" -Message "Waiting for user answers (round $interviewRound, $($questions.Count) questions)"
 
-            # Poll for answers file
+            # Send questions to external notification channel (Teams) if configured
+            $interviewNotifications = @{}
+            $interviewNotifSettings = $null
+            try {
+                $notifModule = Join-Path $botRoot "systems\mcp\modules\NotificationClient.psm1"
+                if (Test-Path $notifModule) {
+                    Import-Module $notifModule -Force
+                    $interviewNotifSettings = Get-NotificationSettings -BotRoot $botRoot
+                    if ($interviewNotifSettings.enabled) {
+                        foreach ($q in $questions) {
+                            $fakeTask = @{ id = "$ProcessId-interview"; name = "Kickstart Interview Round $interviewRound" }
+                            $pendingQ = @{
+                                id = "$($q.id)-r$interviewRound"
+                                question = $q.question
+                                context = $q.context
+                                options = @($q.options | ForEach-Object { @{ key = $_.key; label = $_.label; rationale = $_.rationale } })
+                                recommendation = $q.recommendation
+                            }
+                            $sendResult = Send-TaskNotification -TaskContent $fakeTask -PendingQuestion $pendingQ -Settings $interviewNotifSettings
+                            if ($sendResult.success) {
+                                $interviewNotifications[$q.id] = @{
+                                    question_id = $sendResult.question_id
+                                    instance_id = $sendResult.instance_id
+                                    project_id  = $sendResult.project_id
+                                }
+                            }
+                        }
+                        Write-Status "Sent $($interviewNotifications.Count) question(s) to Teams" -Type Info
+                    }
+                }
+            } catch {
+                Write-Status "Notification send failed (non-fatal): $($_.Exception.Message)" -Type Warn
+            }
+
+            # Poll for answers file OR external Teams responses
             $answersPath = Join-Path $ProductDir "clarification-answers.json"
             if (Test-Path $answersPath) { Remove-Item $answersPath -Force }
+            $teamsAnswers = @{}
+            $lastTeamsPoll = [datetime]::MinValue
+            $teamsPollInterval = 10  # seconds between server polls
 
             while (-not (Test-Path $answersPath)) {
                 if (Test-ProcessStopSignal -Id $ProcessId) {
@@ -794,6 +831,42 @@ Review all context above. Decide whether to write clarification-questions.json (
                     Write-ProcessFile -Id $ProcessId -Data $processData
                     throw "Process stopped by user during interview"
                 }
+
+                # Check for Teams responses if notifications were sent
+                if ($interviewNotifications.Count -gt 0 -and ([datetime]::UtcNow - $lastTeamsPoll).TotalSeconds -ge $teamsPollInterval) {
+                    $lastTeamsPoll = [datetime]::UtcNow
+                    foreach ($qId in @($interviewNotifications.Keys)) {
+                        if ($teamsAnswers.ContainsKey($qId)) { continue }
+                        try {
+                            $notif = $interviewNotifications[$qId]
+                            $resp = Get-TaskNotificationResponse -Notification $notif -Settings $interviewNotifSettings
+                            if ($resp) {
+                                $answer = if ($resp.selectedKey) { $resp.selectedKey } elseif ($resp.freeText) { $resp.freeText } else { $null }
+                                if ($answer) {
+                                    $teamsAnswers[$qId] = $answer
+                                    Write-Status "Received Teams answer for $qId : $answer" -Type Info
+                                }
+                            }
+                        } catch { }
+                    }
+
+                    # If all questions answered via Teams, write the answers file
+                    if ($teamsAnswers.Count -ge $questions.Count) {
+                        $answersObj = @{
+                            answers = @($questions | ForEach-Object {
+                                @{
+                                    id     = $_.id
+                                    answer = $teamsAnswers[$_.id]
+                                }
+                            })
+                            answered_via = "teams"
+                        }
+                        $answersObj | ConvertTo-Json -Depth 5 | Set-Content -Path $answersPath -Encoding UTF8
+                        Write-Status "All $($questions.Count) answers received via Teams" -Type Complete
+                        break
+                    }
+                }
+
                 Start-Sleep -Seconds 2
             }
 
@@ -2952,7 +3025,43 @@ IMPORTANT: If creating mission.md, it MUST begin with ## Executive Summary as th
                         $processData.heartbeat_status = "Waiting for answers (phase ${phaseNum}: $phaseName)"
                         Write-ProcessFile -Id $procId -Data $processData
 
+                        # Send questions to external notification channel (Teams) if configured
+                        $phaseNotifications = @{}
+                        $phaseNotifSettings = $null
+                        try {
+                            $notifModule = Join-Path $botRoot "systems\mcp\modules\NotificationClient.psm1"
+                            if (Test-Path $notifModule) {
+                                Import-Module $notifModule -Force
+                                $phaseNotifSettings = Get-NotificationSettings -BotRoot $botRoot
+                                if ($phaseNotifSettings.enabled) {
+                                    foreach ($q in $phaseQData.questions) {
+                                        $fakeTask = @{ id = "$procId-phase-$phaseNum"; name = "Phase $phaseNum - $phaseName" }
+                                        $pendingQ = @{
+                                            id = "$($q.id)-p$phaseNum"
+                                            question = $q.question
+                                            context = $q.context
+                                            options = @($q.options | ForEach-Object { @{ key = $_.key; label = $_.label; rationale = $_.rationale } })
+                                            recommendation = $q.recommendation
+                                        }
+                                        $sendResult = Send-TaskNotification -TaskContent $fakeTask -PendingQuestion $pendingQ -Settings $phaseNotifSettings
+                                        if ($sendResult.success) {
+                                            $phaseNotifications[$q.id] = @{
+                                                question_id = $sendResult.question_id
+                                                instance_id = $sendResult.instance_id
+                                                project_id  = $sendResult.project_id
+                                            }
+                                        }
+                                    }
+                                    Write-Status "Sent $($phaseNotifications.Count) phase question(s) to Teams" -Type Info
+                                }
+                            }
+                        } catch {
+                            Write-Status "Phase notification send failed (non-fatal): $($_.Exception.Message)" -Type Warn
+                        }
+
                         if (Test-Path $phaseAnswersPath) { Remove-Item $phaseAnswersPath -Force }
+                        $phaseTeamsAnswers = @{}
+                        $phaseLastPoll = [datetime]::MinValue
 
                         while (-not (Test-Path $phaseAnswersPath)) {
                             if (Test-ProcessStopSignal -Id $procId) {
@@ -2963,6 +3072,41 @@ IMPORTANT: If creating mission.md, it MUST begin with ## Executive Summary as th
                                 Write-ProcessFile -Id $procId -Data $processData
                                 throw "Process stopped by user during phase $phaseNum questions"
                             }
+
+                            # Check for Teams responses
+                            if ($phaseNotifications.Count -gt 0 -and ([datetime]::UtcNow - $phaseLastPoll).TotalSeconds -ge 10) {
+                                $phaseLastPoll = [datetime]::UtcNow
+                                foreach ($qId in @($phaseNotifications.Keys)) {
+                                    if ($phaseTeamsAnswers.ContainsKey($qId)) { continue }
+                                    try {
+                                        $notif = $phaseNotifications[$qId]
+                                        $resp = Get-TaskNotificationResponse -Notification $notif -Settings $phaseNotifSettings
+                                        if ($resp) {
+                                            $answer = if ($resp.selectedKey) { $resp.selectedKey } elseif ($resp.freeText) { $resp.freeText } else { $null }
+                                            if ($answer) {
+                                                $phaseTeamsAnswers[$qId] = $answer
+                                                Write-Status "Received Teams answer for $qId : $answer" -Type Info
+                                            }
+                                        }
+                                    } catch { }
+                                }
+
+                                if ($phaseTeamsAnswers.Count -ge $phaseQData.questions.Count) {
+                                    $answersObj = @{
+                                        answers = @($phaseQData.questions | ForEach-Object {
+                                            @{
+                                                id     = $_.id
+                                                answer = $phaseTeamsAnswers[$_.id]
+                                            }
+                                        })
+                                        answered_via = "teams"
+                                    }
+                                    $answersObj | ConvertTo-Json -Depth 5 | Set-Content -Path $phaseAnswersPath -Encoding UTF8
+                                    Write-Status "All $($phaseQData.questions.Count) phase answers received via Teams" -Type Complete
+                                    break
+                                }
+                            }
+
                             Start-Sleep -Seconds 2
                         }
 

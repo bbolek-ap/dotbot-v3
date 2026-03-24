@@ -11,7 +11,7 @@ Uses first-write-wins: if a task has already been answered via the Web UI (moved
 of needs-input), the external response is silently ignored.
 #>
 
-$script:pollerTimer = $null
+$script:pollerPowerShell = $null
 $script:pollerBotRoot = $null
 
 function Initialize-NotificationPoller {
@@ -41,19 +41,35 @@ function Initialize-NotificationPoller {
         return
     }
 
-    $intervalMs = ($settings.poll_interval_seconds) * 1000
-    if ($intervalMs -lt 5000) { $intervalMs = 5000 }
+    $intervalSeconds = $settings.poll_interval_seconds
+    if ($intervalSeconds -lt 5) { $intervalSeconds = 5 }
 
-    # Use System.Threading.Timer for non-blocking background polling
-    $callback = [System.Threading.TimerCallback]{
-        try {
-            Invoke-NotificationPollTick
-        } catch {
-            # Swallow errors to keep the timer alive
+    # Use a dedicated runspace with a sleep loop — avoids the System.Threading.Timer
+    # runspace issue where the TimerCallback scriptblock has no PowerShell runspace.
+    $pollerRunspace = [runspacefactory]::CreateRunspace()
+    $pollerRunspace.Open()
+
+    $script:pollerPowerShell = [powershell]::Create()
+    $script:pollerPowerShell.Runspace = $pollerRunspace
+
+    $pollerModule = $PSCommandPath
+    $script:pollerPowerShell.AddScript(@"
+        Import-Module '$($pollerModule -replace "'","''")' -Force
+        Import-Module '$($notifModule -replace "'","''")' -Force
+        `$script:pollerBotRoot = '$($BotRoot -replace "'","''")'
+
+        while (`$true) {
+            Start-Sleep -Seconds $intervalSeconds
+            try {
+                Invoke-NotificationPollTick
+            } catch {
+                # Swallow per-tick errors to keep polling
+            }
         }
-    }
+"@)
 
-    $script:pollerTimer = New-Object System.Threading.Timer($callback, $null, $intervalMs, $intervalMs)
+    # BeginInvoke runs the loop asynchronously without blocking the main thread
+    $null = $script:pollerPowerShell.BeginInvoke()
 }
 
 function Invoke-NotificationPollTick {
