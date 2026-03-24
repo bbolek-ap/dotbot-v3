@@ -847,7 +847,7 @@ Review all context above. Decide whether to write clarification-questions.json (
                                     Write-Status "Received Teams answer for $qId : $answer" -Type Info
                                 }
                             }
-                        } catch { }
+                        } catch { Write-Verbose "Teams polling attempt failed: $_" }
                     }
 
                     # If all questions answered via Teams, write the answers file
@@ -3088,7 +3088,7 @@ IMPORTANT: If creating mission.md, it MUST begin with ## Executive Summary as th
                                                 Write-Status "Received Teams answer for $qId : $answer" -Type Info
                                             }
                                         }
-                                    } catch { }
+                                    } catch { Write-Verbose "Teams polling attempt failed: $_" }
                                 }
 
                                 if ($phaseTeamsAnswers.Count -ge $phaseQData.questions.Count) {
