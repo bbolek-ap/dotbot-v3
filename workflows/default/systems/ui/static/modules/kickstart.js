@@ -320,7 +320,7 @@ function renderWorkflowCardGrid(container) {
         const wfName = names[index];
         if (!wfName) return;
         const runBtn = card.querySelector('.wf-run-btn');
-        if (runBtn) runBtn.addEventListener('click', () => runWorkflow(wfName));
+        if (runBtn) runBtn.addEventListener('click', () => openKickstartModal());
         const stopBtn = card.querySelector('.wf-stop-btn');
         if (stopBtn) stopBtn.addEventListener('click', () => stopWorkflow(wfName));
     });

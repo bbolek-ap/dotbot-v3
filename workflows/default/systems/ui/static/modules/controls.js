@@ -325,7 +325,11 @@ function initControlButtons() {
 
         switch (action) {
             case 'start-workflow':
-                await launchWorkflow();
+                if (typeof openKickstartModal === 'function') {
+                    openKickstartModal();
+                } else {
+                    await launchWorkflow();
+                }
                 break;
             case 'stop-workflow':
                 await stopProcessesByType('workflow');
@@ -460,7 +464,13 @@ function renderWorkflowControls(workflows) {
         const led = row.querySelector('.wf-led');
         if (led) led.id = `wf-led-${wf.name}`;
         const runBtn = row.querySelector('.wf-run-btn');
-        if (runBtn) runBtn.addEventListener('click', () => runWorkflow(wf.name));
+        if (runBtn) runBtn.addEventListener('click', () => {
+            if (typeof openKickstartModal === 'function') {
+                openKickstartModal();
+            } else {
+                runWorkflow(wf.name);
+            }
+        });
         const stopBtn = row.querySelector('.wf-stop-btn');
         if (stopBtn) stopBtn.addEventListener('click', () => stopWorkflow(wf.name));
     });
