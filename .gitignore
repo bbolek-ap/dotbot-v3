@@ -26,6 +26,12 @@ Thumbs.db
 .playwright-mcp/
 .serena/
 
+# Playwright MCP screenshots (should use --output-dir)
+page-*.png
+page-*.jpeg
+element-*.png
+element-*.jpeg
+
 # Server (DotbotServer C# app)
 server/src/**/bin/
 server/src/**/obj/
