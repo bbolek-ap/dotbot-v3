@@ -855,8 +855,9 @@ Review all context above. Decide whether to write clarification-questions.json (
                         $answersObj = @{
                             answers = @($questions | ForEach-Object {
                                 @{
-                                    id     = $_.id
-                                    answer = $teamsAnswers[$_.id]
+                                    id       = $_.id
+                                    question = $_.question
+                                    answer   = $teamsAnswers[$_.id]
                                 }
                             })
                             answered_via = "teams"
@@ -3095,8 +3096,9 @@ IMPORTANT: If creating mission.md, it MUST begin with ## Executive Summary as th
                                     $answersObj = @{
                                         answers = @($phaseQData.questions | ForEach-Object {
                                             @{
-                                                id     = $_.id
-                                                answer = $phaseTeamsAnswers[$_.id]
+                                                id       = $_.id
+                                                question = $_.question
+                                                answer   = $phaseTeamsAnswers[$_.id]
                                             }
                                         })
                                         answered_via = "teams"
