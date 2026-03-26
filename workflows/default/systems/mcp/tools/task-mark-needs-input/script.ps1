@@ -1,126 +1,79 @@
-# Import session tracking module
+# Import modules
 Import-Module (Join-Path $global:DotbotProjectRoot ".bot\systems\mcp\modules\SessionTracking.psm1") -Force
+Import-Module (Join-Path $global:DotbotProjectRoot ".bot\systems\mcp\modules\TaskStore.psm1") -Force
 
 function Invoke-TaskMarkNeedsInput {
     param(
         [hashtable]$Arguments
     )
 
-    # Extract arguments
     $taskId = $Arguments['task_id']
     $question = $Arguments['question']
     $splitProposal = $Arguments['split_proposal']
-    
-    # Validate required fields
-    if (-not $taskId) {
-        throw "Task ID is required"
-    }
-    
-    if (-not $question -and -not $splitProposal) {
-        throw "Either a question or split_proposal is required"
-    }
-    
-    if ($question -and $splitProposal) {
-        throw "Cannot provide both question and split_proposal - use one at a time"
-    }
-    
-    # Define tasks directories
-    $tasksBaseDir = Join-Path $global:DotbotProjectRoot ".bot\workspace\tasks"
-    $analysingDir = Join-Path $tasksBaseDir "analysing"
-    $needsInputDir = Join-Path $tasksBaseDir "needs-input"
-    
-    # Find the task file in analysing
-    $taskFile = $null
-    if (Test-Path $analysingDir) {
-        $files = Get-ChildItem -Path $analysingDir -Filter "*.json" -File
-        foreach ($file in $files) {
-            try {
-                $content = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
-                if ($content.id -eq $taskId) {
-                    $taskFile = $file
-                    break
-                }
-            } catch {
-                # Continue searching
-            }
-        }
-    }
-    
-    if (-not $taskFile) {
-        throw "Task with ID '$taskId' not found in analysing status"
-    }
-    
-    # Read task content
-    $taskContent = Get-Content -Path $taskFile.FullName -Raw | ConvertFrom-Json
-    
-    # Update task properties
-    $taskContent.status = 'needs-input'
-    $taskContent.updated_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
 
-    # Close current Claude session (marks session as ended but preserves session_id for resumption)
-    $claudeSessionId = $env:CLAUDE_SESSION_ID
-    if ($claudeSessionId) {
-        Close-SessionOnTask -TaskContent $taskContent -SessionId $claudeSessionId -Phase 'analysis'
-    }
+    if (-not $taskId) { throw "Task ID is required" }
+    if (-not $question -and -not $splitProposal) { throw "Either a question or split_proposal is required" }
+    if ($question -and $splitProposal) { throw "Cannot provide both question and split_proposal - use one at a time" }
 
-    # Initialize questions_resolved array if it doesn't exist
-    if (-not $taskContent.PSObject.Properties['questions_resolved']) {
-        $taskContent | Add-Member -NotePropertyName 'questions_resolved' -NotePropertyValue @() -Force
-    }
-    
-    # Store the pending question or split proposal
+    # Pre-read the task to build question data before the transition
+    $found = Find-TaskFileById -TaskId $taskId -SearchStatuses @('analysing', 'needs-input')
+    if (-not $found) { throw "Task with ID '$taskId' not found in analysing status" }
+
+    # Build updates
+    $updates = @{}
+
     if ($question) {
-        # Generate question ID
-        $questionId = "q$($taskContent.questions_resolved.Count + 1)"
-        
+        $questionsResolved = @()
+        if ($found.Content.PSObject.Properties['questions_resolved']) {
+            $questionsResolved = @($found.Content.questions_resolved)
+        }
+
+        $questionId = "q$($questionsResolved.Count + 1)"
         $pendingQuestion = @{
-            id = $questionId
-            question = $question.question
-            context = $question.context
-            options = $question.options
+            id             = $questionId
+            question       = $question.question
+            context        = $question.context
+            options        = $question.options
             recommendation = if ($question.recommendation) { $question.recommendation } else { "A" }
-            asked_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+            asked_at       = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
         }
-        
-        if (-not $taskContent.PSObject.Properties['pending_question']) {
-            $taskContent | Add-Member -NotePropertyName 'pending_question' -NotePropertyValue $null -Force
-        }
-        $taskContent.pending_question = $pendingQuestion
-        
-        # Clear any existing split proposal
-        if ($taskContent.PSObject.Properties['split_proposal']) {
-            $taskContent.split_proposal = $null
-        }
+        $updates['pending_question'] = $pendingQuestion
+        $updates['split_proposal'] = $null
+        $updates['questions_resolved'] = $questionsResolved
     }
     elseif ($splitProposal) {
-        $proposal = @{
-            reason = $splitProposal.reason
-            sub_tasks = $splitProposal.sub_tasks
+        $updates['split_proposal'] = @{
+            reason      = $splitProposal.reason
+            sub_tasks   = $splitProposal.sub_tasks
             proposed_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
         }
-        
-        if (-not $taskContent.PSObject.Properties['split_proposal']) {
-            $taskContent | Add-Member -NotePropertyName 'split_proposal' -NotePropertyValue $null -Force
-        }
-        $taskContent.split_proposal = $proposal
-        
-        # Clear any existing pending question
-        if ($taskContent.PSObject.Properties['pending_question']) {
-            $taskContent.pending_question = $null
+        $updates['pending_question'] = $null
+    }
+
+    $result = Move-TaskState -TaskId $taskId `
+        -FromStates @('analysing', 'needs-input') `
+        -ToState 'needs-input' `
+        -Updates $updates
+
+    $taskContent = $result.task_content
+
+    # Close current Claude session on actual transition
+    if (-not $result.already_in_state) {
+        $claudeSessionId = $env:CLAUDE_SESSION_ID
+        if ($claudeSessionId) {
+            Close-SessionOnTask -TaskContent $taskContent -SessionId $claudeSessionId -Phase 'analysis'
+            $taskContent | ConvertTo-Json -Depth 20 | Set-Content -Path $result.file_path -Encoding UTF8
         }
     }
-    
-    # Ensure needs-input directory exists
-    if (-not (Test-Path $needsInputDir)) {
-        New-Item -ItemType Directory -Force -Path $needsInputDir | Out-Null
+
+    # If already in needs-input, still apply the new question/proposal
+    if ($result.already_in_state) {
+        foreach ($key in $updates.Keys) {
+            Set-OrAddProperty -Object $taskContent -Name $key -Value $updates[$key]
+        }
+        Set-OrAddProperty -Object $taskContent -Name 'updated_at' -Value ((Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"))
+        $taskContent | ConvertTo-Json -Depth 20 | Set-Content -Path $result.file_path -Encoding UTF8
     }
-    
-    # Move file to needs-input directory
-    $newFilePath = Join-Path $needsInputDir $taskFile.Name
-    
-    # Save updated task to new location
-    $taskContent | ConvertTo-Json -Depth 20 | Set-Content -Path $newFilePath -Encoding UTF8
-    Remove-Item -Path $taskFile.FullName -Force
 
     # --- External notification (opt-in) ---
     try {
@@ -138,31 +91,27 @@ function Invoke-TaskMarkNeedsInput {
                         project_id  = $sendResult.project_id
                         sent_at     = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
                     } -Force
-                    $taskContent | ConvertTo-Json -Depth 20 | Set-Content -Path $newFilePath -Encoding UTF8
+                    $taskContent | ConvertTo-Json -Depth 20 | Set-Content -Path $result.file_path -Encoding UTF8
                 }
             }
         }
     } catch {
-        # Never block the core flow - notification failure is non-fatal
+        # Never block the core flow
     }
 
     # Build result
-    $result = @{
-        success = $true
-        message = if ($question) { "Task paused for human input - question pending" } else { "Task paused for human input - split proposal pending" }
-        task_id = $taskId
-        task_name = $taskContent.name
-        old_status = 'analysing'
+    $output = @{
+        success    = $true
+        message    = if ($question) { "Task paused for human input - question pending" } else { "Task paused for human input - split proposal pending" }
+        task_id    = $taskId
+        task_name  = $result.task_name
+        old_status = $result.old_status
         new_status = 'needs-input'
-        file_path = $newFilePath
+        file_path  = $result.file_path
     }
-    
-    if ($question) {
-        $result['pending_question'] = $taskContent.pending_question
-    }
-    elseif ($splitProposal) {
-        $result['split_proposal'] = $taskContent.split_proposal
-    }
-    
-    return $result
+
+    if ($question) { $output['pending_question'] = $taskContent.pending_question }
+    elseif ($splitProposal) { $output['split_proposal'] = $taskContent.split_proposal }
+
+    return $output
 }

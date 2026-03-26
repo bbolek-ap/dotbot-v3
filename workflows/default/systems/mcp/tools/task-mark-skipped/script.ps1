@@ -1,140 +1,69 @@
+Import-Module (Join-Path $global:DotbotProjectRoot ".bot\systems\mcp\modules\TaskStore.psm1") -Force
+
 function Invoke-TaskMarkSkipped {
     param(
         [hashtable]$Arguments
     )
-    
-    # Extract arguments
+
     $taskId = $Arguments['task_id']
     $skipReason = $Arguments['skip_reason']
-    
-    # Validate required fields
-    if (-not $taskId) {
-        throw "Task ID is required"
-    }
-    
-    if (-not $skipReason) {
-        throw "Skip reason is required"
-    }
-    
-    # Validate skip reason
+
+    if (-not $taskId) { throw "Task ID is required" }
+    if (-not $skipReason) { throw "Skip reason is required" }
+
     $validReasons = @('non-recoverable', 'max-retries')
     if ($skipReason -notin $validReasons) {
         throw "Invalid skip reason. Must be one of: $($validReasons -join ', ')"
     }
-    
-    # Define tasks directories
-    $tasksBaseDir = Join-Path $global:DotbotProjectRoot ".bot\workspace\tasks"
-    $todosDir = Join-Path $tasksBaseDir "todo"
-    $inProgressDir = Join-Path $tasksBaseDir "in-progress"
-    $doneDir = Join-Path $tasksBaseDir "done"
-    $skippedDir = Join-Path $tasksBaseDir "skipped"
-    
-    # Map status to directory
-    $analysingDir = Join-Path $tasksBaseDir "analysing"
-    $analysedDir = Join-Path $tasksBaseDir "analysed"
-    $needsInputDir = Join-Path $tasksBaseDir "needs-input"
-    $splitDir = Join-Path $tasksBaseDir "split"
-    $cancelledDir = Join-Path $tasksBaseDir "cancelled"
 
-    $statusDirs = @{
-        'todo' = $todosDir
-        'analysing' = $analysingDir
-        'needs-input' = $needsInputDir
-        'analysed' = $analysedDir
-        'in-progress' = $inProgressDir
-        'done' = $doneDir
-        'skipped' = $skippedDir
-        'split' = $splitDir
-        'cancelled' = $cancelledDir
-    }
+    # We need to read the task first to build skip_history, because Move-TaskState
+    # won't apply updates on idempotent (already_in_state) returns.
+    $found = Find-TaskFileById -TaskId $taskId
+    if (-not $found) { throw "Task with ID '$taskId' not found" }
 
-    # Find the task file
-    $taskFile = $null
-    $currentStatus = $null
-    $validStatuses = @('todo', 'analysing', 'needs-input', 'analysed', 'in-progress', 'done', 'skipped', 'split', 'cancelled')
-    
-    foreach ($status in $validStatuses) {
-        $dir = $statusDirs[$status]
-        if (Test-Path $dir) {
-            $files = Get-ChildItem -Path $dir -Filter "*.json" -File
-            foreach ($file in $files) {
-                try {
-                    $content = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
-                    if ($content.id -eq $taskId) {
-                        $taskFile = $file
-                        $currentStatus = $status
-                        break
-                    }
-                } catch {
-                    # Continue searching
-                }
-            }
-            if ($taskFile) { break }
+    $taskContent = $found.Content
+
+    # Build skip_history
+    $skipHistory = @()
+    if ($taskContent.PSObject.Properties['skip_history']) {
+        if ($taskContent.skip_history -is [System.Collections.IEnumerable] -and $taskContent.skip_history -isnot [string]) {
+            $skipHistory = @($taskContent.skip_history)
+        } elseif ($taskContent.skip_history) {
+            $skipHistory = @($taskContent.skip_history)
         }
     }
-    
-    if (-not $taskFile) {
-        throw "Task with ID '$taskId' not found"
-    }
-    
-    # Read task content
-    $taskContent = Get-Content -Path $taskFile.FullName -Raw | ConvertFrom-Json
-    
-    # Update task properties
-    $taskContent.status = 'skipped'
-    $taskContent.updated_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
-    
-    # Initialize skip_history if it doesn't exist
-    if (-not $taskContent.PSObject.Properties['skip_history']) {
-        $taskContent | Add-Member -NotePropertyName 'skip_history' -NotePropertyValue @() -Force
-    }
-    
-    # Convert to array if it's not already
-    if ($taskContent.skip_history -isnot [System.Collections.IEnumerable] -or $taskContent.skip_history -is [string]) {
-        $taskContent.skip_history = @($taskContent.skip_history) | Where-Object { $_ }
-    } else {
-        $taskContent.skip_history = @($taskContent.skip_history)
-    }
-    
-    # Append new skip entry
+
     $skipEntry = @{
         skipped_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
-        reason = $skipReason
+        reason     = $skipReason
     }
-    $taskContent.skip_history += $skipEntry
-    
-    # Ensure skipped directory exists
-    if (-not (Test-Path $skippedDir)) {
-        New-Item -ItemType Directory -Force -Path $skippedDir | Out-Null
+    $skipHistory += $skipEntry
+
+    $allStatuses = @('todo', 'analysing', 'needs-input', 'analysed', 'in-progress', 'done', 'skipped', 'split', 'cancelled')
+
+    $result = Move-TaskState -TaskId $taskId `
+        -FromStates $allStatuses `
+        -ToState 'skipped' `
+        -Updates @{ skip_history = $skipHistory }
+
+    # If already in skipped state, Move-TaskState returns early without applying updates.
+    # Persist skip_history manually in that case.
+    if ($result.already_in_state) {
+        Set-OrAddProperty -Object $result.task_content -Name 'skip_history' -Value $skipHistory
+        Set-OrAddProperty -Object $result.task_content -Name 'updated_at' -Value ((Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'"))
+        $result.task_content | ConvertTo-Json -Depth 20 | Set-Content -Path $result.file_path -Encoding UTF8
     }
-    
-    # Move file to skipped directory
-    $newFilePath = Join-Path $skippedDir $taskFile.Name
-    
-    # Resolve paths to compare them properly
-    $oldPathResolved = [System.IO.Path]::GetFullPath($taskFile.FullName)
-    $newPathResolved = [System.IO.Path]::GetFullPath($newFilePath)
-    
-    # Save updated task to new location (if different from old path)
-    if ($oldPathResolved -ne $newPathResolved) {
-        $taskContent | ConvertTo-Json -Depth 10 | Set-Content -Path $newFilePath -Encoding UTF8
-        Remove-Item -Path $taskFile.FullName -Force
-    } else {
-        # Task is already in skipped directory, just update in place
-        $taskContent | ConvertTo-Json -Depth 10 | Set-Content -Path $taskFile.FullName -Encoding UTF8
-    }
-    
-    # Return result
+
     return @{
-        success = $true
-        message = "Task marked as skipped"
-        task_id = $taskId
-        task_name = $taskContent.name
-        old_status = $currentStatus
-        new_status = 'skipped'
-        skip_reason = $skipReason
-        skip_count = $taskContent.skip_history.Count
-        skip_history = $taskContent.skip_history
-        file_path = $newFilePath
+        success      = $true
+        message      = "Task marked as skipped"
+        task_id      = $taskId
+        task_name    = $result.task_name
+        old_status   = $result.old_status
+        new_status   = 'skipped'
+        skip_reason  = $skipReason
+        skip_count   = $skipHistory.Count
+        skip_history = $skipHistory
+        file_path    = $result.file_path
     }
 }
