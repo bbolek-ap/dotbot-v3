@@ -241,12 +241,21 @@ function New-TaskRecord {
         [Parameter(Mandatory)][hashtable]$Properties
     )
 
+    if (-not $Properties.ContainsKey('name')) {
+        throw "New-TaskRecord: 'name' property is required and must be a non-empty string."
+    }
+
+    $name = $Properties['name']
+    if (-not ($name -is [string]) -or [string]::IsNullOrWhiteSpace($name)) {
+        throw "New-TaskRecord: 'name' property must be a non-empty string."
+    }
+
     $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
     $id  = if ($Properties.ContainsKey('id')) { $Properties['id'] } else { [guid]::NewGuid().ToString() }
 
     $task = [PSCustomObject]@{
         id          = $id
-        name        = $Properties['name']
+        name        = $name
         description = if ($Properties.ContainsKey('description')) { $Properties['description'] } else { '' }
         category    = if ($Properties.ContainsKey('category'))    { $Properties['category'] }    else { 'feature' }
         status      = 'todo'
