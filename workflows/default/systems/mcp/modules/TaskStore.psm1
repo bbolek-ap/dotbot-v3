@@ -318,7 +318,7 @@ function Update-TaskRecord {
 
     # Block other reserved fields
     foreach ($key in @($Updates.Keys)) {
-        if ($key -in @('id', 'created_at')) {
+        if ($key -in @('id', 'created_at', 'updated_at')) {
             throw "Cannot update reserved field '$key'."
         }
     }
