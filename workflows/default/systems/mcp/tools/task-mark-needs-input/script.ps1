@@ -17,7 +17,7 @@ function Invoke-TaskMarkNeedsInput {
 
     # Pre-read the task to build question data before the transition
     $found = Find-TaskFileById -TaskId $taskId -SearchStatuses @('analysing', 'needs-input')
-    if (-not $found) { throw "Task with ID '$taskId' not found in analysing status" }
+    if (-not $found) { throw "Task with ID '$taskId' not found in 'analysing' or 'needs-input' status" }
 
     # Build updates
     $updates = @{}
