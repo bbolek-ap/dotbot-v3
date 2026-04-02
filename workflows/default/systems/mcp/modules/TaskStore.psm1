@@ -271,7 +271,7 @@ function New-TaskRecord {
     }
 
     # Build filename
-    $safeName = ($task.name -replace '[^a-zA-Z0-9\s-]', '' -replace '\s+', '-').ToLower()
+    $safeName = ( ($task.name -replace '[^a-zA-Z0-9\s-]', '') -replace '\s+', '-' ).ToLower()
     $shortId  = $id.Substring(0, [Math]::Min(8, $id.Length))
     $fileName = "$safeName-$shortId.json"
 
