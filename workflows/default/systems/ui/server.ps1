@@ -1599,6 +1599,7 @@ try {
                             status = if ($defaultRunning) { 'running' } else { 'idle' }
                             tasks = $defaultTasks
                             has_running_process = [bool]$defaultRunning
+                            has_form = [bool]($defaultManifest -and $defaultManifest['form'])
                             is_default = $true
                         }
                     }

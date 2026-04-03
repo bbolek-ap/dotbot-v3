@@ -477,7 +477,7 @@ async function runWorkflow(name, hasForm) {
     // project context and upload files before tasks are created
     if (hasForm) {
         if (typeof openKickstartModal === 'function') {
-            openKickstartModal();
+            openKickstartModal(name);
         } else {
             console.warn('Workflow requires a form but kickstart modal is not available');
             showToast('Kickstart modal is not available', 'warning');
