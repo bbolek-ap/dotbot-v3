@@ -16,11 +16,7 @@ function Invoke-TaskMarkTodo {
 
     $previousState = Find-TaskFileById -TaskId $taskId
     if (-not $previousState) {
-        return @{
-            success = $false
-            message = "Task with ID '$taskId' not found"
-            task_id = $taskId
-        }
+        throw "Task with ID '$taskId' not found"
     }
     $result = Move-TaskState -TaskId $taskId `
         -FromStates @('todo', 'in-progress', 'done', 'skipped') `
