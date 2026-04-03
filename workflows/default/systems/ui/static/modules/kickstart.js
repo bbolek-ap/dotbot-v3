@@ -226,7 +226,7 @@ function renderKickstartCTA(container) {
                 <div class="kickstart-title">${escapeHtml(title)}</div>
                 <div class="kickstart-description">${escapeHtml(desc)}</div>
                 ${phaseNames ? `<div class="kickstart-phase-inline">${phaseNames}</div>` : ''}
-                <button class="kickstart-btn" onclick="openKickstartModal()" style="margin-top: 1.5rem">${escapeHtml(buttonText)}</button>
+                <button class="kickstart-btn" onclick="openKickstartModal(currentWorkflowName)" style="margin-top: 1.5rem">${escapeHtml(buttonText)}</button>
             </div>
         `;
         return;
@@ -243,7 +243,7 @@ function renderKickstartCTA(container) {
                 <div class="kickstart-title">${escapeHtml(title)}</div>
                 <div class="kickstart-description">${escapeHtml(desc)}</div>
                 <div class="kickstart-phase-inline">${phaseNames}</div>
-                <button class="kickstart-btn" onclick="openKickstartModal()" style="margin-top: 1.5rem">RUN WORKFLOW</button>
+                <button class="kickstart-btn" onclick="openKickstartModal(currentWorkflowName)" style="margin-top: 1.5rem">RUN WORKFLOW</button>
             </div>
         `;
         return;
@@ -257,7 +257,7 @@ function renderKickstartCTA(container) {
             <div class="kickstart-description">
                 Describe your project and let Claude create your foundational product documents.
             </div>
-            <button class="kickstart-btn" onclick="openKickstartModal()">KICKSTART PROJECT</button>
+            <button class="kickstart-btn" onclick="openKickstartModal(currentWorkflowName)">KICKSTART PROJECT</button>
         </div>
     `;
 }
