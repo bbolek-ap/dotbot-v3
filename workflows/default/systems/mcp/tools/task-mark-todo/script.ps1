@@ -14,8 +14,8 @@ function Invoke-TaskMarkTodo {
         started_at   = $null
     }
 
-    $previousState = Find-TaskFileById -TaskId $TaskId
-    if (-not $found) {
+    $previousState = Find-TaskFileById -TaskId $taskId
+    if (-not $previousState) {
         return @{
             success = $false
             message = "Task with ID '$taskId' not found"

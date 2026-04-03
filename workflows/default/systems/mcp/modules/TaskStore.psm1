@@ -318,10 +318,12 @@ function Update-TaskRecord {
 
     # Block other reserved fields
     foreach ($key in @($Updates.Keys)) {
-        if ($key -in @('id', 'created_at', 'updated_at')) {
+        if ($key -in @('id', 'created_at')) {
             throw "Cannot update reserved field '$key'."
         }
     }
+    # Silently remove updated_at if supplied — it's set automatically below
+    $Updates.Remove('updated_at') | Out-Null
 
     $found = Find-TaskFileById -TaskId $TaskId
     if (-not $found) {

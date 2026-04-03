@@ -64,9 +64,16 @@ function Invoke-TaskMarkAnalysed {
     }
 
     $result = Move-TaskState -TaskId $taskId `
-        -FromStates @('analysing', 'needs-input') `
+        -FromStates @('analysing', 'needs-input', 'analysed') `
         -ToState 'analysed' `
         -Updates $updates
+
+    # If already analysed, still persist the updated analysis data
+    if ($result.already_in_state) {
+        $updateResult = Update-TaskRecord -TaskId $taskId -Updates $updates
+        $result.task_content = $updateResult.task_content
+        $result.file_path = $updateResult.file_path
+    }
 
     # Close current Claude session (analysis complete) on actual transition
     if (-not $result.already_in_state) {
