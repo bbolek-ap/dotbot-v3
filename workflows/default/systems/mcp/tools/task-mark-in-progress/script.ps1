@@ -13,7 +13,7 @@ function Invoke-TaskMarkInProgress {
     # Build updates — only set started_at if not already set
     $found = Find-TaskFileById -TaskId $taskId -SearchStatuses @('analysed', 'todo', 'in-progress', 'done')
     if (-not $found) {
-        throw "Task with ID '$taskId' not found in todo or analysed folders"
+        throw "Task with ID '$taskId' not found in analysed, todo, in-progress, or done states"
     }
 
     # Handle already-done
