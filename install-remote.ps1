@@ -42,9 +42,8 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     return
 }
 
-# Determine archive format based on platform
-$isWindows = $PSVersionTable.Platform -eq 'Win32NT' -or [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
-$archiveExt = if ($isWindows) { "zip" } else { "tar.gz" }
+# Determine archive format based on platform (PS 7+ provides $IsWindows automatically)
+$archiveExt = if ($IsWindows) { "zip" } else { "tar.gz" }
 
 # Fetch latest release info from GitHub API
 Write-Host "  Fetching latest release..." -ForegroundColor Cyan
