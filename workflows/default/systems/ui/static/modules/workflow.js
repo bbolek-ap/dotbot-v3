@@ -652,7 +652,7 @@ function renderWorkflowDetailPanel(workflows) {
                 <span class="wf-header-icon">${getIcon('accountTree', 14)}</span>
                 <span class="wf-header-name">${escapeHtml(wf.name)}</span>
                 <div class="wf-header-actions">
-                    <button class="ctrl-btn-xs primary" onclick="runWorkflow('${escapeHtml(wf.name)}')" ${isRunning ? 'disabled' : ''} title="Run">${getIcon('playArrow', 12)}</button>
+                    <button class="ctrl-btn-xs primary" onclick="runWorkflow('${escapeHtml(wf.name)}', ${!!wf.has_form})" ${isRunning ? 'disabled' : ''} title="Run">${getIcon('playArrow', 12)}</button>
                     <button class="ctrl-btn-xs" onclick="stopWorkflow('${escapeHtml(wf.name)}')" ${!isRunning ? 'disabled' : ''} title="Stop">${getIcon('stop', 12)}</button>
                 </div>
             </div>
