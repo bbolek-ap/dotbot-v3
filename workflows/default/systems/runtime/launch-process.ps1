@@ -175,6 +175,7 @@ if (-not $instanceId) {
 }
 
 # Override model selections from UI settings (ui-settings.json)
+$uiSettings = $null
 $uiSettingsPath = Join-Path $botRoot ".control\ui-settings.json"
 if (Test-Path $uiSettingsPath) {
     try {
@@ -186,6 +187,21 @@ if (Test-Path $uiSettingsPath) {
 
 # Load provider config
 $providerConfig = Get-ProviderConfig
+
+# Resolve permission mode (ui-settings > settings.default > provider default)
+$permissionMode = $null
+if ($uiSettings -and $uiSettings.permissionMode) {
+    $permissionMode = $uiSettings.permissionMode
+} elseif ($settings.permission_mode) {
+    $permissionMode = $settings.permission_mode
+}
+if ($permissionMode -and $providerConfig.permission_modes -and -not $providerConfig.permission_modes.$permissionMode) {
+    Write-BotLog -Level Warn -Message "Permission mode '$permissionMode' not valid for active provider. Using provider default."
+    $permissionMode = $null
+}
+if (-not $permissionMode -and $providerConfig.default_permission_mode) {
+    $permissionMode = $providerConfig.default_permission_mode
+}
 
 # Resolve model (parameter > settings > provider default)
 if (-not $Model) {
@@ -202,6 +218,19 @@ try {
     Write-BotLog -Level Warn -Message "Model '$Model' not valid for active provider. Falling back to '$($providerConfig.default_model)'."
     $claudeModelName = Resolve-ProviderModelId -ModelAlias $providerConfig.default_model
 }
+# Validate model against permission mode restrictions (e.g. Haiku excluded in auto mode)
+if ($permissionMode -and $providerConfig.permission_modes -and $providerConfig.permission_modes.$permissionMode) {
+    $modeConfig = $providerConfig.permission_modes.$permissionMode
+    if ($modeConfig.restrictions -and $modeConfig.restrictions.excluded_models) {
+        $excluded = @($modeConfig.restrictions.excluded_models)
+        if ($Model -in $excluded) {
+            Write-BotLog -Level Warn -Message "Model '$Model' is not supported with permission mode '$permissionMode'. Remapping to '$($providerConfig.default_model)'."
+            $Model = $providerConfig.default_model
+            $claudeModelName = Resolve-ProviderModelId -ModelAlias $Model
+        }
+    }
+}
+
 $env:CLAUDE_MODEL = $claudeModelName
 $env:DOTBOT_MODEL = $claudeModelName
 
@@ -217,17 +246,23 @@ Initialize-ProcessRegistry `
 # --- Interview Loop (dot-sourced for kickstart) ---
 . "$PSScriptRoot\modules\InterviewLoop.ps1"
 
+# Early-initialize variables used by the crash trap (must be set before trap registration)
+$procId = if ($ProcessId) { $ProcessId } else { New-ProcessId }
+$lockKey = if ($Slot -ge 0) { "$Type-$Slot" } else { $Type }
+
 # --- Crash Trap ---
 # Catch unexpected termination and persist process state before exit
 trap {
-    if ($procId -and $processData -and $processData.status -in @('running', 'starting')) {
+    if ((Test-Path variable:procId) -and $procId -and (Test-Path variable:processData) -and $processData -and $processData.status -in @('running', 'starting')) {
         $processData.status = 'stopped'
         $processData.failed_at = (Get-Date).ToUniversalTime().ToString("o")
         $processData.error = "Unexpected termination: $($_.Exception.Message)"
         try { Write-ProcessFile -Id $procId -Data $processData } catch { Write-BotLog -Level Debug -Message "Non-critical operation failed" -Exception $_ }
-        try { Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Process terminated unexpectedly: $($_.Exception.Message)" } catch { Write-BotLog -Level Debug -Message "Failed to read process data" -Exception $_ }
+        try { Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Process terminated unexpectedly: $($_.Exception.Message)" } catch { Write-BotLog -Level Warn -Message "Failed to write process activity" -Exception $_ }
     }
-    try { Remove-ProcessLock -LockType $lockKey } catch { Write-BotLog -Level Debug -Message "Logging operation failed" -Exception $_ }
+    if (Test-Path variable:lockKey) {
+        try { Remove-ProcessLock -LockType $lockKey } catch { Write-BotLog -Level Debug -Message "Logging operation failed" -Exception $_ }
+    }
 }
 
 # --- Preflight checks ---
@@ -241,7 +276,6 @@ if (-not $preflight.passed) {
 }
 
 # --- Single-instance guard (slot-aware) ---
-$lockKey = if ($Slot -ge 0) { "$Type-$Slot" } else { $Type }
 if (-not (Acquire-ProcessLock -LockType $lockKey)) {
     $lockPath = Join-Path $controlDir "launch-$lockKey.lock"
     $existingPid = if (Test-Path $lockPath) { (Get-Content $lockPath -Raw -ErrorAction SilentlyContinue)?.Trim() } else { "unknown" }
@@ -250,7 +284,6 @@ if (-not (Acquire-ProcessLock -LockType $lockKey)) {
 }
 
 # --- Initialize Process ---
-$procId = if ($ProcessId) { $ProcessId } else { New-ProcessId }
 $sessionId = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH-mm-ssZ")
 $claudeSessionId = New-ProviderSession
 
@@ -339,6 +372,7 @@ if ($Type -in @('analysis', 'execution', 'analyse')) {
         NoWait         = [bool]$NoWait
         MaxTasks       = $MaxTasks
         TaskId         = $TaskId
+        PermissionMode = $permissionMode
     }
     if ($Type -in @('analysis', 'analyse')) {
         & "$PSScriptRoot\modules\ProcessTypes\Invoke-AnalysisProcess.ps1" -Context $ctx
@@ -369,6 +403,7 @@ elseif ($Type -eq 'task-runner') {
         TaskId         = $TaskId
         Slot           = $Slot
         Workflow       = $Workflow
+        PermissionMode = $permissionMode
     }
     & "$PSScriptRoot\modules\ProcessTypes\Invoke-WorkflowProcess.ps1" -Context $ctx
 } # --- Kickstart type: three-phase product setup ---
@@ -391,6 +426,7 @@ elseif ($Type -eq 'kickstart') {
         NeedsInterview = [bool]$NeedsInterview
         FromPhase      = $FromPhase
         SkipPhaseIds   = $skipPhaseIds
+        PermissionMode = $permissionMode
     }
     & "$PSScriptRoot\modules\ProcessTypes\Invoke-KickstartProcess.ps1" -Context $ctx
 } # --- Prompt-based types: planning, commit, task-creation ---
@@ -404,8 +440,9 @@ elseif ($Type -in @('planning', 'commit', 'task-creation')) {
         SessionId   = $claudeSessionId
         Prompt      = $Prompt
         Description = $Description
-        ShowDebug   = [bool]$ShowDebug
-        ShowVerbose = [bool]$ShowVerbose
+        ShowDebug      = [bool]$ShowDebug
+        ShowVerbose    = [bool]$ShowVerbose
+        PermissionMode = $permissionMode
     }
     & "$PSScriptRoot\modules\ProcessTypes\Invoke-PromptProcess.ps1" -Context $ctx
 }
