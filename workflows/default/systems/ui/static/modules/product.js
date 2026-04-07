@@ -62,8 +62,8 @@ function renderJsonViewer(content) {
             <div class="json-viewer-header">
                 <span class="json-viewer-label">JSON</span>
                 <span class="json-viewer-controls">
-                    <button class="json-ctrl-btn" onclick="jsonToggleAll(this.closest('.json-viewer'), true)">− collapse all</button>
-                    <button class="json-ctrl-btn" onclick="jsonToggleAll(this.closest('.json-viewer'), false)">+ expand all</button>
+                    <button class="json-ctrl-btn" data-action="collapse">− collapse all</button>
+                    <button class="json-ctrl-btn" data-action="expand">+ expand all</button>
                 </span>
             </div>
             <div class="json-tree">${treeHtml}</div>
@@ -149,8 +149,14 @@ function jsonToggleAll(viewer, collapse) {
 function _jsonViewerClickHandler(e) {
     const toggle = e.target.closest('.json-toggle[data-target]');
     const summary = e.target.closest('.json-summary[data-collapse]');
-    if (toggle) jsonToggle(toggle.dataset.target);
-    else if (summary) jsonToggle(summary.dataset.collapse);
+    const ctrl = e.target.closest('.json-ctrl-btn[data-action]');
+    if (toggle) {
+        jsonToggle(toggle.dataset.target);
+    } else if (summary) {
+        jsonToggle(summary.dataset.collapse);
+    } else if (ctrl) {
+        jsonToggleAll(ctrl.closest('.json-viewer'), ctrl.dataset.action === 'collapse');
+    }
 }
 
 /**

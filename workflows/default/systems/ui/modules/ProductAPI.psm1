@@ -57,6 +57,8 @@ function Resolve-ProductDocumentPath {
     }
 
     $normalizedName = ($decodedName.Trim() -replace '\\', '/').TrimStart('/')
+    # Strip any explicit extension — the loop below re-adds extensions in priority order
+    # (.md wins over .json), so a request for "foo.json" correctly finds "foo.md" if present.
     if ($normalizedName.EndsWith('.md', [System.StringComparison]::OrdinalIgnoreCase)) {
         $normalizedName = $normalizedName.Substring(0, $normalizedName.Length - 3)
     } elseif ($normalizedName.EndsWith('.json', [System.StringComparison]::OrdinalIgnoreCase)) {

@@ -527,19 +527,8 @@
     opacity: 1;
 }
 
-/* Tree container (replaces json-pre) */
-.doc-viewer .json-tree {
-    margin: 0;
-    padding: 14px 16px;
-    overflow-x: auto;
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 1.6;
-    color: var(--label-color);
-}
-
-/* Keep json-pre for parse-error fallback */
+/* Tree container and parse-error fallback pre share the same base styles */
+.doc-viewer .json-tree,
 .doc-viewer .json-pre {
     margin: 0;
     padding: 14px 16px;
