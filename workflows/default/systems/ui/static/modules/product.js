@@ -28,6 +28,7 @@ async function loadProductDoc(docName, type = 'md') {
         if (data.success && data.content) {
             if (type === 'json') {
                 viewer.innerHTML = renderJsonViewer(data.content);
+                initJsonViewer(viewer);
             } else {
                 // Convert markdown to basic HTML
                 viewer.innerHTML = markdownToHtml(data.content);
@@ -45,45 +46,120 @@ async function loadProductDoc(docName, type = 'md') {
     }
 }
 
+let _jsonNodeCounter = 0;
+
 /**
- * Render a JSON document with syntax highlighting
+ * Render a JSON document with collapsible tree view
  * @param {string} content - Raw JSON string
  * @returns {string} - HTML string
  */
 function renderJsonViewer(content) {
     try {
         const parsed = JSON.parse(content);
-        const formatted = JSON.stringify(parsed, null, 2);
-        return `<div class="json-viewer"><div class="json-viewer-header"><span class="json-viewer-label">JSON</span></div><pre class="json-pre">${colorizeJson(formatted)}</pre></div>`;
+        _jsonNodeCounter = 0;
+        const treeHtml = renderJsonLines(parsed, 0, null, true);
+        return `<div class="json-viewer">
+            <div class="json-viewer-header">
+                <span class="json-viewer-label">JSON</span>
+                <span class="json-viewer-controls">
+                    <button class="json-ctrl-btn" onclick="jsonToggleAll(this.closest('.json-viewer'), true)">− collapse all</button>
+                    <button class="json-ctrl-btn" onclick="jsonToggleAll(this.closest('.json-viewer'), false)">+ expand all</button>
+                </span>
+            </div>
+            <div class="json-tree">${treeHtml}</div>
+        </div>`;
     } catch (e) {
         return `<div class="json-viewer"><div class="json-viewer-header"><span class="json-viewer-label">JSON</span><span class="json-viewer-error-badge">parse error</span></div><div class="json-parse-error">${escapeHtml(e.message)}</div><pre class="json-pre">${escapeHtml(content)}</pre></div>`;
     }
 }
 
 /**
- * Tokenize and colorize a formatted JSON string
- * @param {string} json - Formatted JSON string (already safe to process)
- * @returns {string} - HTML with syntax-highlight spans
+ * Recursively render JSON value as collapsible tree lines
+ * @param {*} value - The JSON value
+ * @param {number} depth - Current nesting depth
+ * @param {string|null} key - Object key for this value, or null
+ * @param {boolean} isLast - Whether this is the last item in its parent
+ * @returns {string} - HTML string
  */
-function colorizeJson(json) {
-    return json.replace(
-        /("(?:\\.|[^"\\])*")(\s*:)?|(\btrue\b|\bfalse\b|\bnull\b)|(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
-        (match, str, colon, keyword, number) => {
-            if (str !== undefined) {
-                if (colon) {
-                    return `<span class="json-key">${escapeHtml(str)}</span>:`;
-                }
-                return `<span class="json-string">${escapeHtml(str)}</span>`;
-            }
-            if (keyword !== undefined) {
-                return `<span class="${keyword === 'null' ? 'json-null' : 'json-bool'}">${keyword}</span>`;
-            }
-            if (number !== undefined) {
-                return `<span class="json-number">${number}</span>`;
-            }
-            return escapeHtml(match);
+function renderJsonLines(value, depth, key, isLast) {
+    const pl = `padding-left:${depth * 14}px`;
+    const keyHtml = key !== null ? `<span class="json-key">"${escapeHtml(key)}"</span>: ` : '';
+    const commaHtml = isLast ? '' : '<span class="json-punct">,</span>';
+
+    if (value === null) return `<div class="json-line" style="${pl}">${keyHtml}<span class="json-null">null</span>${commaHtml}</div>`;
+    if (typeof value === 'boolean') return `<div class="json-line" style="${pl}">${keyHtml}<span class="json-bool">${value}</span>${commaHtml}</div>`;
+    if (typeof value === 'number') return `<div class="json-line" style="${pl}">${keyHtml}<span class="json-number">${value}</span>${commaHtml}</div>`;
+    if (typeof value === 'string') return `<div class="json-line" style="${pl}">${keyHtml}<span class="json-string">"${escapeHtml(value)}"</span>${commaHtml}</div>`;
+
+    const isArray = Array.isArray(value);
+    const keys = isArray ? null : Object.keys(value);
+    const count = isArray ? value.length : keys.length;
+    const open = isArray ? '[' : '{';
+    const close = isArray ? ']' : '}';
+
+    if (count === 0) {
+        return `<div class="json-line" style="${pl}">${keyHtml}<span class="json-bracket">${open}${close}</span>${commaHtml}</div>`;
+    }
+
+    const id = 'jn' + (++_jsonNodeCounter);
+    const summary = isArray ? `${count} item${count !== 1 ? 's' : ''}` : `${count} key${count !== 1 ? 's' : ''}`;
+    const summarySpan = `<span class="json-summary json-hidden" data-collapse="${id}">…${summary}${close}</span>`;
+    const commaInline = commaHtml ? `<span class="json-comma-inline json-hidden" data-collapse="${id}">${commaHtml}</span>` : '';
+
+    let childrenHtml = '';
+    if (isArray) {
+        value.forEach((v, i) => { childrenHtml += renderJsonLines(v, depth + 1, null, i === value.length - 1); });
+    } else {
+        keys.forEach((k, i) => { childrenHtml += renderJsonLines(value[k], depth + 1, k, i === keys.length - 1); });
+    }
+
+    const openLine = `<div class="json-line" style="${pl}">${keyHtml}<span class="json-toggle" data-target="${id}">▼</span><span class="json-bracket">${open}</span>${summarySpan}${commaInline}</div>`;
+    const childrenDiv = `<div class="json-children" id="${id}">${childrenHtml}<div class="json-close-line" style="${pl}"><span class="json-bracket">${close}</span>${commaHtml}</div></div>`;
+    return openLine + childrenDiv;
+}
+
+/**
+ * Toggle a JSON node expanded/collapsed
+ * @param {string} id - The json-children element ID
+ */
+function jsonToggle(id) {
+    const children = document.getElementById(id);
+    if (!children) return;
+    const willCollapse = !children.classList.contains('json-collapsed');
+    children.classList.toggle('json-collapsed', willCollapse);
+    document.querySelectorAll(`[data-collapse="${id}"]`).forEach(el => {
+        el.classList.toggle('json-hidden', !willCollapse);
+    });
+    const toggle = document.querySelector(`.json-toggle[data-target="${id}"]`);
+    if (toggle) toggle.textContent = willCollapse ? '▶' : '▼';
+}
+
+/**
+ * Collapse or expand all nodes in a json-viewer
+ * @param {HTMLElement} viewer - The .json-viewer container
+ * @param {boolean} collapse - true to collapse all, false to expand all
+ */
+function jsonToggleAll(viewer, collapse) {
+    viewer.querySelectorAll('.json-children').forEach(el => {
+        const isCollapsed = el.classList.contains('json-collapsed');
+        if (collapse !== isCollapsed) jsonToggle(el.id);
+    });
+}
+
+/**
+ * Attach click event delegation for JSON tree toggles
+ * @param {HTMLElement} container - The doc-viewer container
+ */
+function initJsonViewer(container) {
+    container.addEventListener('click', (e) => {
+        const toggle = e.target.closest('.json-toggle[data-target]');
+        const summary = e.target.closest('.json-summary[data-collapse]');
+        if (toggle) {
+            jsonToggle(toggle.dataset.target);
+        } else if (summary) {
+            jsonToggle(summary.dataset.collapse);
         }
-    );
+    });
 }
 
 /**
