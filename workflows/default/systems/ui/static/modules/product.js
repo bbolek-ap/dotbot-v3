@@ -13,8 +13,9 @@ async function initProductNav() {
 /**
  * Load a product document
  * @param {string} docName - Document name to load
+ * @param {string} type - Document type: 'md' or 'json'
  */
-async function loadProductDoc(docName) {
+async function loadProductDoc(docName, type = 'md') {
     const viewer = document.getElementById('doc-viewer');
     if (!viewer) return;
 
@@ -25,11 +26,15 @@ async function loadProductDoc(docName) {
         const data = await response.json();
 
         if (data.success && data.content) {
-            // Convert markdown to basic HTML
-            viewer.innerHTML = markdownToHtml(data.content);
-            // Render any Mermaid diagrams
-            if (typeof renderMermaidDiagrams === 'function') {
-                renderMermaidDiagrams(viewer);
+            if (type === 'json') {
+                viewer.innerHTML = renderJsonViewer(data.content);
+            } else {
+                // Convert markdown to basic HTML
+                viewer.innerHTML = markdownToHtml(data.content);
+                // Render any Mermaid diagrams
+                if (typeof renderMermaidDiagrams === 'function') {
+                    renderMermaidDiagrams(viewer);
+                }
             }
         } else {
             viewer.innerHTML = `<div class="doc-placeholder">Document not found: ${escapeHtml(docName)}</div>`;
@@ -38,6 +43,47 @@ async function loadProductDoc(docName) {
         console.error('Failed to load doc:', error);
         viewer.innerHTML = '<div class="doc-placeholder">Error loading document</div>';
     }
+}
+
+/**
+ * Render a JSON document with syntax highlighting
+ * @param {string} content - Raw JSON string
+ * @returns {string} - HTML string
+ */
+function renderJsonViewer(content) {
+    try {
+        const parsed = JSON.parse(content);
+        const formatted = JSON.stringify(parsed, null, 2);
+        return `<div class="json-viewer"><div class="json-viewer-header"><span class="json-viewer-label">JSON</span></div><pre class="json-pre">${colorizeJson(formatted)}</pre></div>`;
+    } catch (e) {
+        return `<div class="json-viewer"><div class="json-viewer-header"><span class="json-viewer-label">JSON</span><span class="json-viewer-error-badge">parse error</span></div><div class="json-parse-error">${escapeHtml(e.message)}</div><pre class="json-pre">${escapeHtml(content)}</pre></div>`;
+    }
+}
+
+/**
+ * Tokenize and colorize a formatted JSON string
+ * @param {string} json - Formatted JSON string (already safe to process)
+ * @returns {string} - HTML with syntax-highlight spans
+ */
+function colorizeJson(json) {
+    return json.replace(
+        /("(?:\\.|[^"\\])*")(\s*:)?|(\btrue\b|\bfalse\b|\bnull\b)|(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+        (match, str, colon, keyword, number) => {
+            if (str !== undefined) {
+                if (colon) {
+                    return `<span class="json-key">${escapeHtml(str)}</span>:`;
+                }
+                return `<span class="json-string">${escapeHtml(str)}</span>`;
+            }
+            if (keyword !== undefined) {
+                return `<span class="${keyword === 'null' ? 'json-null' : 'json-bool'}">${keyword}</span>`;
+            }
+            if (number !== undefined) {
+                return `<span class="json-number">${number}</span>`;
+            }
+            return escapeHtml(match);
+        }
+    );
 }
 
 /**
@@ -74,14 +120,15 @@ function formatFileSize(bytes) {
  * @param {HTMLElement} item - The .file-nav-item element
  */
 function activateProductItem(item) {
-    if (item.dataset.type === 'binary') {
+    const type = item.dataset.type;
+    if (type === 'binary') {
         showBinaryPlaceholder({
             name: item.dataset.doc,
             filename: item.dataset.filename,
             size: parseInt(item.dataset.size, 10) || 0
         });
     } else {
-        loadProductDoc(item.dataset.doc);
+        loadProductDoc(item.dataset.doc, type);
     }
 }
 
@@ -116,10 +163,10 @@ function renderProductTree(tree) {
  */
 function renderProductFileItem(doc) {
     const type = doc.type || 'md';
-    const isBinary = type !== 'md';
+    const isBinary = type !== 'md' && type !== 'json';
     const binaryClass = isBinary ? ' binary' : '';
-    const displayName = doc.filename.split('/').pop().replace(/\.md$/, '');
-    const icon = isBinary ? '&#x1F4C4;' : escapeHtml(displayName.charAt(0).toUpperCase());
+    const displayName = doc.filename.split('/').pop().replace(/\.(md|json)$/, '');
+    const icon = isBinary ? '&#x1F4C4;' : (type === 'json' ? '&#x7B;&#x7D;' : escapeHtml(displayName.charAt(0).toUpperCase()));
     return `<div class="file-nav-item${binaryClass}" data-doc="${escapeHtml(doc.name)}" data-type="${escapeHtml(type)}" data-filename="${escapeHtml(doc.filename)}" data-size="${doc.size || 0}">
         <span class="item-icon doc">${icon}</span>
         <span>${escapeHtml(displayName)}</span>

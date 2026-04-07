@@ -456,6 +456,68 @@
     text-shadow: 0 0 8px var(--secondary-25);
 }
 
+/* JSON Viewer */
+.doc-viewer .json-viewer {
+    margin: 0;
+    border-radius: 4px;
+    border: 1px solid var(--success-20);
+    border-left: 3px solid var(--color-success);
+    overflow: hidden;
+    background: var(--bg-black-overlay-heavy);
+}
+
+.doc-viewer .json-viewer-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    background: var(--success-10);
+    border-bottom: 1px solid var(--success-15);
+}
+
+.doc-viewer .json-viewer-label {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-success);
+    font-family: var(--font-ui);
+}
+
+.doc-viewer .json-viewer-error-badge {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-error);
+    font-family: var(--font-ui);
+}
+
+.doc-viewer .json-parse-error {
+    padding: 8px 14px;
+    font-size: 11px;
+    color: var(--color-error);
+    font-family: var(--font-mono);
+    border-bottom: 1px solid var(--error-30);
+}
+
+.doc-viewer .json-pre {
+    margin: 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--label-color);
+}
+
+.doc-viewer .json-key    { color: var(--color-primary); }
+.doc-viewer .json-string { color: var(--color-success-dim); }
+.doc-viewer .json-number { color: rgb(var(--color-primary-rgb) / 0.7); }
+.doc-viewer .json-bool   { color: var(--color-error); }
+.doc-viewer .json-null   { color: var(--label-color); font-style: italic; }
+
 /* Legacy code styling (for any unclassified code) */
 .doc-viewer code {
     background: var(--bg-black-overlay-heavy);

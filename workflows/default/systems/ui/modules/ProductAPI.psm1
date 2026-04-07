@@ -31,7 +31,8 @@ function Resolve-ProductDocumentInfo {
 
     $relativePath = [System.IO.Path]::GetRelativePath($ProductDir, $File.FullName) -replace '\\', '/'
     $isMd = $File.Extension -eq '.md'
-    $name = if ($isMd) { $relativePath -replace '\.md$', '' } else { $relativePath }
+    $isJson = $File.Extension -eq '.json'
+    $name = if ($isMd -or $isJson) { $relativePath -replace '\.(md|json)$', '' } else { $relativePath }
     $segments = @($name -split '/')
 
     return [PSCustomObject]@{
@@ -39,7 +40,7 @@ function Resolve-ProductDocumentInfo {
         Filename = $relativePath
         Depth = [Math]::Max(0, $segments.Count - 1)
         BaseName = $File.BaseName
-        Type = if ($isMd) { 'md' } else { 'binary' }
+        Type = if ($isMd) { 'md' } elseif ($isJson) { 'json' } else { 'binary' }
         Size = $File.Length
     }
 }
@@ -58,6 +59,8 @@ function Resolve-ProductDocumentPath {
     $normalizedName = ($decodedName.Trim() -replace '\\', '/').TrimStart('/')
     if ($normalizedName.EndsWith('.md', [System.StringComparison]::OrdinalIgnoreCase)) {
         $normalizedName = $normalizedName.Substring(0, $normalizedName.Length - 3)
+    } elseif ($normalizedName.EndsWith('.json', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $normalizedName = $normalizedName.Substring(0, $normalizedName.Length - 5)
     }
 
     if ([string]::IsNullOrWhiteSpace($normalizedName)) {
@@ -65,11 +68,9 @@ function Resolve-ProductDocumentPath {
     }
 
     $relativePath = ($normalizedName -split '/') -join [System.IO.Path]::DirectorySeparatorChar
-    $candidatePath = Join-Path $ProductDir "$relativePath.md"
 
     try {
         $productDirFull = [System.IO.Path]::GetFullPath($ProductDir)
-        $candidateFull = [System.IO.Path]::GetFullPath($candidatePath)
     } catch {
         return $null
     }
@@ -80,13 +81,42 @@ function Resolve-ProductDocumentPath {
         "$productDirFull$([System.IO.Path]::DirectorySeparatorChar)"
     }
 
-    if ($candidateFull -notlike "$productPrefix*") {
+    # Try extensions in order: .md then .json
+    foreach ($ext in @('.md', '.json')) {
+        $candidatePath = Join-Path $ProductDir "$relativePath$ext"
+        try {
+            $candidateFull = [System.IO.Path]::GetFullPath($candidatePath)
+        } catch {
+            continue
+        }
+
+        if ($candidateFull -notlike "$productPrefix*") {
+            continue
+        }
+
+        if (Test-Path $candidateFull) {
+            return @{
+                Name = $normalizedName
+                FullPath = $candidateFull
+            }
+        }
+    }
+
+    # Fallback: return .md path so Get-ProductDocument can return a 404
+    $fallbackPath = Join-Path $ProductDir "$relativePath.md"
+    try {
+        $fallbackFull = [System.IO.Path]::GetFullPath($fallbackPath)
+    } catch {
+        return $null
+    }
+
+    if ($fallbackFull -notlike "$productPrefix*") {
         return $null
     }
 
     return @{
         Name = $normalizedName
-        FullPath = $candidateFull
+        FullPath = $fallbackFull
     }
 }
 
