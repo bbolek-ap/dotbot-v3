@@ -146,20 +146,20 @@ function jsonToggleAll(viewer, collapse) {
     });
 }
 
+function _jsonViewerClickHandler(e) {
+    const toggle = e.target.closest('.json-toggle[data-target]');
+    const summary = e.target.closest('.json-summary[data-collapse]');
+    if (toggle) jsonToggle(toggle.dataset.target);
+    else if (summary) jsonToggle(summary.dataset.collapse);
+}
+
 /**
- * Attach click event delegation for JSON tree toggles
+ * Attach click event delegation for JSON tree toggles (safe to call multiple times)
  * @param {HTMLElement} container - The doc-viewer container
  */
 function initJsonViewer(container) {
-    container.addEventListener('click', (e) => {
-        const toggle = e.target.closest('.json-toggle[data-target]');
-        const summary = e.target.closest('.json-summary[data-collapse]');
-        if (toggle) {
-            jsonToggle(toggle.dataset.target);
-        } else if (summary) {
-            jsonToggle(summary.dataset.collapse);
-        }
-    });
+    container.removeEventListener('click', _jsonViewerClickHandler);
+    container.addEventListener('click', _jsonViewerClickHandler);
 }
 
 /**
