@@ -186,6 +186,7 @@ function FieldTooltip({ text }: { text: string }) {
         onFocus={show}
         onBlur={hide}
         onKeyDown={(e) => e.key === 'Escape' && hide()}
+        onClick={(e) => e.stopPropagation()}
       >
         ?
       </button>
@@ -871,8 +872,8 @@ function TaskFields({
             onChange={(e) => onUpdate({ optional: e.target.checked || undefined })}
           />
           Optional
+          <FieldTooltip text="When checked, a failure in this task will not block dependent tasks or halt the workflow." />
         </label>
-        <FieldTooltip text="When checked, a failure in this task will not block dependent tasks or halt the workflow." />
       </div>
 
       <div className="field-group">
