@@ -57,7 +57,7 @@ function Start-GoScript {
     $psi.FileName = "pwsh"
     # Define a no-op Open-Url so go.ps1 skips browser opening,
     # and override Start-Process to suppress the fallback browser launch
-    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"function Open-Url { param(`$u) }; function Start-Process { param(`$FilePath, `$ArgumentList) if (`$FilePath -eq 'pwsh') { Microsoft.PowerShell.Management\Start-Process -FilePath `$FilePath -ArgumentList `$ArgumentList -NoNewWindow } }; & '$escapedPath' -Headless`""
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"function Open-Url { param(`$u) }; function Start-Process { param(`$FilePath, `$ArgumentList, [switch]`$NoNewWindow) if (`$FilePath -eq 'pwsh') { Microsoft.PowerShell.Management\Start-Process -FilePath `$FilePath -ArgumentList `$ArgumentList -NoNewWindow:`$NoNewWindow } }; & '$escapedPath' -Headless`""
     $psi.WorkingDirectory = Split-Path -Parent $BotDir
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
@@ -198,7 +198,8 @@ function Stop-OrphanedServerProcesses {
                     $cmdLine = if ($IsWindows) {
                         (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
                     } else {
-                        (Get-Content "/proc/$($_.Id)/cmdline" -Raw -ErrorAction SilentlyContinue) -replace "`0", " "
+                        # ps -p works on both macOS and Linux (/proc is Linux-only)
+                        & ps -p $_.Id -o command= 2>/dev/null
                     }
                     $cmdLine -and $cmdLine.Contains($serverScript)
                 } catch { $false }
