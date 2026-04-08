@@ -3,7 +3,7 @@
  * Recipe fields (prompts, agents, skills) get rich editing.
  * All other fields are plain text / YAML editors.
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import YAML from 'yaml';
 import type { WorkflowManifest, Task, TaskType } from '../model/workflow';
@@ -138,32 +138,65 @@ export function PropertiesPanel({
 
 function FieldTooltip({ text }: { text: string }) {
   const [visible, setVisible] = useState(false);
-  const [pos, setPos] = useState<{ bottom: number; right: number }>({ bottom: 0, right: 0 });
-  const iconRef = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<{ top: number; right: number }>({ top: 8, right: 8 });
+  const iconRef = useRef<HTMLButtonElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  const tooltipId = useRef(`tooltip-${Math.random().toString(36).slice(2)}`);
 
-  const handleMouseEnter = () => {
-    if (iconRef.current) {
-      const rect = iconRef.current.getBoundingClientRect();
-      setPos({
-        bottom: window.innerHeight - rect.top + 6,
-        right: window.innerWidth - rect.right,
-      });
-    }
-    setVisible(true);
-  };
+  const updatePosition = useCallback(() => {
+    if (!iconRef.current || !popupRef.current) return;
+    const padding = 8;
+    const gap = 6;
+    const iconRect = iconRef.current.getBoundingClientRect();
+    const popupRect = popupRef.current.getBoundingClientRect();
+
+    const preferredTop = iconRect.top - popupRect.height - gap;
+    const top = Math.min(Math.max(preferredTop, padding), Math.max(padding, window.innerHeight - popupRect.height - padding));
+
+    const preferredRight = window.innerWidth - iconRect.right;
+    const right = Math.min(Math.max(preferredRight, padding), Math.max(padding, window.innerWidth - popupRect.width - padding));
+
+    setPos({ top, right });
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [visible, updatePosition]);
+
+  const show = () => setVisible(true);
+  const hide = () => setVisible(false);
 
   return (
     <span className="field-tooltip">
-      <span
+      <button
+        type="button"
         className="field-tooltip-icon"
         ref={iconRef}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={() => setVisible(false)}
+        aria-label="Help"
+        aria-describedby={visible ? tooltipId.current : undefined}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        onKeyDown={(e) => e.key === 'Escape' && hide()}
       >
         ?
-      </span>
+      </button>
       {visible && createPortal(
-        <div className="field-tooltip-popup" style={{ bottom: pos.bottom, right: pos.right }}>
+        <div
+          id={tooltipId.current}
+          role="tooltip"
+          ref={popupRef}
+          className="field-tooltip-popup"
+          style={{ top: pos.top, right: pos.right }}
+        >
           {text}
         </div>,
         document.body
@@ -838,8 +871,8 @@ function TaskFields({
             onChange={(e) => onUpdate({ optional: e.target.checked || undefined })}
           />
           Optional
-          <FieldTooltip text="When checked, a failure in this task will not block dependent tasks or halt the workflow." />
         </label>
+        <FieldTooltip text="When checked, a failure in this task will not block dependent tasks or halt the workflow." />
       </div>
 
       <div className="field-group">
