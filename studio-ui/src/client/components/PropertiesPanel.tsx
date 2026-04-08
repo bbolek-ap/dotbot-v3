@@ -4,6 +4,7 @@
  * All other fields are plain text / YAML editors.
  */
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import YAML from 'yaml';
 import type { WorkflowManifest, Task, TaskType } from '../model/workflow';
 import { TASK_TYPE_STYLES } from '../model/transform';
@@ -133,6 +134,44 @@ export function PropertiesPanel({
   );
 }
 
+/* ── Tooltip ── */
+
+function FieldTooltip({ text }: { text: string }) {
+  const [visible, setVisible] = useState(false);
+  const [pos, setPos] = useState<{ bottom: number; right: number }>({ bottom: 0, right: 0 });
+  const iconRef = useRef<HTMLSpanElement>(null);
+
+  const handleMouseEnter = () => {
+    if (iconRef.current) {
+      const rect = iconRef.current.getBoundingClientRect();
+      setPos({
+        bottom: window.innerHeight - rect.top + 6,
+        right: window.innerWidth - rect.right,
+      });
+    }
+    setVisible(true);
+  };
+
+  return (
+    <span className="field-tooltip">
+      <span
+        className="field-tooltip-icon"
+        ref={iconRef}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={() => setVisible(false)}
+      >
+        ?
+      </span>
+      {visible && createPortal(
+        <div className="field-tooltip-popup" style={{ bottom: pos.bottom, right: pos.right }}>
+          {text}
+        </div>,
+        document.body
+      )}
+    </span>
+  );
+}
+
 /* ── YAML field helper ── */
 
 function YamlField({
@@ -140,11 +179,13 @@ function YamlField({
   value,
   onChange,
   placeholder,
+  tooltip,
 }: {
   label: string;
   value: unknown;
   onChange: (parsed: unknown) => void;
   placeholder?: string;
+  tooltip?: string;
 }) {
   const serialize = (v: unknown) =>
     v && Object.keys(v as object).length > 0
@@ -181,7 +222,10 @@ function YamlField({
 
   return (
     <div className="field-group">
-      <label className="field-label">{label}</label>
+      <label className="field-label">
+        {label}
+        {tooltip && <FieldTooltip text={tooltip} />}
+      </label>
       <textarea
         className="field-textarea field-yaml"
         value={text}
@@ -241,7 +285,10 @@ function McpArgsField({
 
   return (
     <div className="field-group">
-      <label className="field-label">MCP Args (JSON)</label>
+      <label className="field-label">
+        MCP Args (JSON)
+        <FieldTooltip text="JSON arguments passed to the MCP tool. Must match the tool's expected input schema." />
+      </label>
       <textarea
         className="field-textarea field-yaml"
         value={text}
@@ -281,7 +328,10 @@ function WorkflowFields({
     <>
       {/* ── Required fields ── */}
       <div className="field-group">
-        <label className="field-label field-required">Name</label>
+        <label className="field-label field-required">
+          Name
+          <FieldTooltip text="Machine-readable identifier for this workflow. Used in file names and references. No spaces." />
+        </label>
         <input
           className="field-input"
           value={manifest.name}
@@ -290,7 +340,10 @@ function WorkflowFields({
       </div>
 
       <div className="field-group">
-        <label className="field-label field-required">Version</label>
+        <label className="field-label field-required">
+          Version
+          <FieldTooltip text="Semantic version string, e.g. 1.0.0. Increment on each release." />
+        </label>
         <input
           className="field-input"
           value={manifest.version}
@@ -299,7 +352,10 @@ function WorkflowFields({
       </div>
 
       <div className="field-group">
-        <label className="field-label field-required">Description</label>
+        <label className="field-label field-required">
+          Description
+          <FieldTooltip text="Human-readable summary shown in the workflow browser and marketplace." />
+        </label>
         <textarea
           className="field-textarea"
           value={manifest.description}
@@ -309,7 +365,10 @@ function WorkflowFields({
       </div>
 
       <div className="field-group">
-        <label className="field-label field-required">Min dotbot Version</label>
+        <label className="field-label field-required">
+          Min dotbot Version
+          <FieldTooltip text="Minimum dotbot version required to run this workflow, e.g. 0.9.0." />
+        </label>
         <input
           className="field-input"
           value={manifest.min_dotbot_version}
@@ -320,7 +379,10 @@ function WorkflowFields({
       {/* ── Recipe fields (rich editing) ── */}
       <div className="field-group">
         <div className="field-label-row">
-          <label className="field-label">Agents</label>
+          <label className="field-label">
+            Agents
+            <FieldTooltip text="AI personas (system prompts) injected into the model's context for every task in this workflow." />
+          </label>
           <div className="field-actions">
             <button
               className="field-action-btn"
@@ -367,7 +429,10 @@ function WorkflowFields({
 
       <div className="field-group">
         <div className="field-label-row">
-          <label className="field-label">Skills</label>
+          <label className="field-label">
+            Skills
+            <FieldTooltip text="Reusable technical guidance documents injected into task prompts as additional context." />
+          </label>
           <div className="field-actions">
             <button
               className="field-action-btn"
@@ -414,7 +479,10 @@ function WorkflowFields({
 
       {/* ── Optional fields ── */}
       <div className="field-group">
-        <label className="field-label">Rerun Strategy</label>
+        <label className="field-label">
+          Rerun Strategy
+          <FieldTooltip text="How to handle re-running a previously run workflow. Default inherits project settings. Fresh deletes prior outputs and starts clean. Continue resumes from the last completed task." />
+        </label>
         <select
           className="field-select"
           value={manifest.rerun || ''}
@@ -429,7 +497,10 @@ function WorkflowFields({
       </div>
 
       <div className="field-group">
-        <label className="field-label">Icon</label>
+        <label className="field-label">
+          Icon
+          <FieldTooltip text="Icon name from the dotbot icon set, e.g. terminal or search. Displayed in the workflow browser." />
+        </label>
         <input
           className="field-input"
           value={manifest.icon || ''}
@@ -439,7 +510,10 @@ function WorkflowFields({
       </div>
 
       <div className="field-group">
-        <label className="field-label">License</label>
+        <label className="field-label">
+          License
+          <FieldTooltip text="SPDX license identifier, e.g. MIT or Apache-2.0. Shown in the marketplace." />
+        </label>
         <input
           className="field-input"
           value={manifest.license || ''}
@@ -449,7 +523,10 @@ function WorkflowFields({
       </div>
 
       <div className="field-group">
-        <label className="field-label">Tags</label>
+        <label className="field-label">
+          Tags
+          <FieldTooltip text="Free-form labels for filtering and discovery in the workflow browser. Comma-separated." />
+        </label>
         <input
           className="field-input"
           value={(manifest.tags || []).join(', ')}
@@ -467,7 +544,10 @@ function WorkflowFields({
       </div>
 
       <div className="field-group">
-        <label className="field-label">Categories</label>
+        <label className="field-label">
+          Categories
+          <FieldTooltip text="Structured classifications for the marketplace browser, e.g. Development, AI. Comma-separated." />
+        </label>
         <input
           className="field-input"
           value={(manifest.categories || []).join(', ')}
@@ -485,7 +565,10 @@ function WorkflowFields({
       </div>
 
       <div className="field-group">
-        <label className="field-label">Author Name</label>
+        <label className="field-label">
+          Author Name
+          <FieldTooltip text="Display name of the workflow's author." />
+        </label>
         <input
           className="field-input"
           value={manifest.author?.name || ''}
@@ -498,7 +581,10 @@ function WorkflowFields({
       </div>
 
       <div className="field-group">
-        <label className="field-label">Author URL</label>
+        <label className="field-label">
+          Author URL
+          <FieldTooltip text="URL for the author's profile, GitHub page, or website." />
+        </label>
         <input
           className="field-input"
           value={manifest.author?.url || ''}
@@ -511,7 +597,10 @@ function WorkflowFields({
       </div>
 
       <div className="field-group">
-        <label className="field-label">Repository</label>
+        <label className="field-label">
+          Repository
+          <FieldTooltip text="URL of the source repository for this workflow." />
+        </label>
         <input
           className="field-input"
           value={manifest.repository || ''}
@@ -521,7 +610,10 @@ function WorkflowFields({
       </div>
 
       <div className="field-group">
-        <label className="field-label">Homepage</label>
+        <label className="field-label">
+          Homepage
+          <FieldTooltip text="URL to documentation or a project website for this workflow." />
+        </label>
         <input
           className="field-input"
           value={manifest.homepage || ''}
@@ -532,6 +624,7 @@ function WorkflowFields({
       {/* ── Advanced YAML fields ── */}
       <YamlField
         label="Requires"
+        tooltip="YAML block declaring environment variables, tool dependencies, or other prerequisites that must be satisfied before the workflow runs."
         value={manifest.requires}
         onChange={(parsed) => onUpdate({ requires: parsed as WorkflowManifest['requires'] })}
         placeholder="env_vars:\n  - var: MY_KEY\n    name: My API Key\n    message: Required\n    hint: Set in .env.local"
@@ -539,6 +632,7 @@ function WorkflowFields({
 
       <YamlField
         label="Form"
+        tooltip="YAML block defining user-selectable modes or pre-run form fields presented to the user when the workflow starts."
         value={manifest.form}
         onChange={(parsed) => onUpdate({ form: parsed as WorkflowManifest['form'] })}
         placeholder="modes:\n  - id: default\n    label: Default Mode"
@@ -546,6 +640,7 @@ function WorkflowFields({
 
       <YamlField
         label="Domain"
+        tooltip="YAML block defining task categories and domain-specific vocabulary used for task classification and analysis."
         value={manifest.domain}
         onChange={(parsed) => onUpdate({ domain: parsed as WorkflowManifest['domain'] })}
         placeholder="task_categories:\n  - research\n  - implementation"
@@ -577,7 +672,10 @@ function TaskFields({
     <>
       {/* ── Type (read-only, always first) ── */}
       <div className="field-group">
-        <label className="field-label field-required">Type</label>
+        <label className="field-label field-required">
+          Type
+          <FieldTooltip text="The execution model for this task. Determines which fields are available. Cannot be changed after creation — delete and re-add to change type." />
+        </label>
         <div className="task-type-badge" style={{ borderColor: TASK_TYPE_STYLES[task.type]?.color }}>
           <span className="toolbar-dropdown-dot" style={{ background: TASK_TYPE_STYLES[task.type]?.color }} />
           {TASK_TYPE_STYLES[task.type]?.label || task.type}
@@ -587,7 +685,10 @@ function TaskFields({
 
       {/* ── Required fields ── */}
       <div className="field-group">
-        <label className="field-label field-required">Name</label>
+        <label className="field-label field-required">
+          Name
+          <FieldTooltip text="Unique identifier for this task within the workflow. Used in depends_on references. No spaces." />
+        </label>
         <input
           className="field-input"
           value={task.name}
@@ -596,7 +697,10 @@ function TaskFields({
       </div>
 
       <div className="field-group">
-        <label className="field-label field-required">Priority</label>
+        <label className="field-label field-required">
+          Priority
+          <FieldTooltip text="Execution order hint. Lower numbers run first when tasks have no direct dependencies between them." />
+        </label>
         <input
           className="field-input"
           type="number"
@@ -609,7 +713,10 @@ function TaskFields({
       {hasField(task.type, 'workflow') && (
         <div className="field-group">
           <div className="field-label-row">
-            <label className="field-label field-required">Prompt File</label>
+            <label className="field-label field-required">
+              Prompt File
+              <FieldTooltip text="The Markdown prompt document that drives this task's AI invocation. Defines the instructions given to the model." />
+            </label>
             <div className="field-actions">
               <button
                 className="field-action-btn"
@@ -646,7 +753,10 @@ function TaskFields({
       {/* Script — plain text */}
       {hasField(task.type, 'script') && (
         <div className="field-group">
-          <label className="field-label field-required">Script</label>
+          <label className="field-label field-required">
+            Script
+            <FieldTooltip text="PowerShell script filename to execute, relative to .bot/scripts/. E.g. expand-task-groups.ps1." />
+          </label>
           <input
             className="field-input"
             value={task.script || ''}
@@ -660,7 +770,10 @@ function TaskFields({
       {hasField(task.type, 'mcp_tool') && (
         <>
           <div className="field-group">
-            <label className="field-label field-required">MCP Tool</label>
+            <label className="field-label field-required">
+              MCP Tool
+              <FieldTooltip text="Name of the MCP (Model Context Protocol) tool to invoke. E.g. bs_yaml_aggregate." />
+            </label>
             <input
               className="field-input"
               value={task.mcp_tool || ''}
@@ -678,7 +791,10 @@ function TaskFields({
       {/* ── Optional fields ── */}
 
       <div className="field-group">
-        <label className="field-label">Depends On</label>
+        <label className="field-label">
+          Depends On
+          <FieldTooltip text="Tasks that must complete successfully before this task can start. You can also drag edges between nodes on the canvas." />
+        </label>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {otherTasks.map((name) => (
             <label key={name} className="field-checkbox">
@@ -701,7 +817,10 @@ function TaskFields({
       </div>
 
       <div className="field-group">
-        <label className="field-label">Condition</label>
+        <label className="field-label">
+          Condition
+          <FieldTooltip text="File-existence glob pattern that gates this task. The task is skipped if the pattern doesn't match any files. Prefix with ! to skip when the file exists." />
+        </label>
         <input
           className="field-input"
           value={task.condition || ''}
@@ -719,11 +838,15 @@ function TaskFields({
             onChange={(e) => onUpdate({ optional: e.target.checked || undefined })}
           />
           Optional
+          <FieldTooltip text="When checked, a failure in this task will not block dependent tasks or halt the workflow." />
         </label>
       </div>
 
       <div className="field-group">
-        <label className="field-label">On Failure</label>
+        <label className="field-label">
+          On Failure
+          <FieldTooltip text="What happens when this task fails. Default follows workflow settings. Halt stops the entire workflow. Continue skips this task and proceeds to the next." />
+        </label>
         <select
           className="field-select"
           value={task.on_failure || ''}
@@ -739,7 +862,10 @@ function TaskFields({
 
       {hasField(task.type, 'outputs') && (
         <div className="field-group">
-          <label className="field-label">Outputs</label>
+          <label className="field-label">
+            Outputs
+            <FieldTooltip text="Filenames this task is expected to produce. The runtime verifies these files exist after the task completes." />
+          </label>
           <input
             className="field-input"
             value={(task.outputs || []).join(', ')}
@@ -760,7 +886,10 @@ function TaskFields({
       {hasField(task.type, 'outputs_dir') && (
         <>
           <div className="field-group">
-            <label className="field-label">Outputs Dir</label>
+            <label className="field-label">
+              Outputs Dir
+              <FieldTooltip text="Directory where this task writes multiple output files. Used together with Min Output Count to verify completion." />
+            </label>
             <input
               className="field-input"
               value={task.outputs_dir || ''}
@@ -771,7 +900,10 @@ function TaskFields({
 
           {task.outputs_dir && hasField(task.type, 'min_output_count') && (
             <div className="field-group">
-              <label className="field-label">Min Output Count</label>
+              <label className="field-label">
+                Min Output Count
+                <FieldTooltip text="Minimum number of files that must exist in Outputs Dir after this task completes. The task fails if fewer files are found." />
+              </label>
               <input
                 className="field-input"
                 type="number"
@@ -787,7 +919,10 @@ function TaskFields({
 
       {hasField(task.type, 'front_matter_docs') && (
         <div className="field-group">
-          <label className="field-label">Front Matter Docs</label>
+          <label className="field-label">
+            Front Matter Docs
+            <FieldTooltip text="Markdown files whose YAML front matter is extracted and injected into the task prompt as structured context." />
+          </label>
           <input
             className="field-input"
             value={(task.front_matter_docs || []).join(', ')}
@@ -808,7 +943,10 @@ function TaskFields({
       {hasField(task.type, 'commit') && (
         <>
           <div className="field-group">
-            <label className="field-label">Commit Paths</label>
+            <label className="field-label">
+              Commit Paths
+              <FieldTooltip text="File paths staged and committed to git after this task completes successfully. Comma-separated glob patterns." />
+            </label>
             <input
               className="field-input"
               value={(task.commit?.paths || []).join(', ')}
@@ -825,7 +963,10 @@ function TaskFields({
           </div>
 
           <div className="field-group">
-            <label className="field-label">Commit Message</label>
+            <label className="field-label">
+              Commit Message
+              <FieldTooltip text="Git commit message used when auto-committing this task's outputs." />
+            </label>
             <input
               className="field-input"
               value={task.commit?.message || ''}
@@ -845,7 +986,10 @@ function TaskFields({
       {/* Post Script — plain text */}
       {hasField(task.type, 'post_script') && (
         <div className="field-group">
-          <label className="field-label">Post Script</label>
+          <label className="field-label">
+            Post Script
+            <FieldTooltip text="PowerShell script run after the task completes. Used for post-processing, cleanup, or side effects." />
+          </label>
           <input
             className="field-input"
             value={task.post_script || ''}
@@ -857,7 +1001,10 @@ function TaskFields({
 
       {hasField(task.type, 'model') && (
         <div className="field-group">
-          <label className="field-label">Model Override</label>
+          <label className="field-label">
+            Model Override
+            <FieldTooltip text="Model ID to use for this task instead of the project default. E.g. claude-opus-4-6 or gpt-4o. Leave blank to use the default." />
+          </label>
           <input
             className="field-input"
             value={task.model || ''}
