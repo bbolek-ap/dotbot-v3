@@ -62,8 +62,8 @@ function renderJsonViewer(content) {
             <div class="json-viewer-header">
                 <span class="json-viewer-label">JSON</span>
                 <span class="json-viewer-controls">
-                    <button class="json-ctrl-btn" data-action="collapse">− collapse all</button>
-                    <button class="json-ctrl-btn" data-action="expand">+ expand all</button>
+                    <button type="button" class="json-ctrl-btn" data-action="collapse">− collapse all</button>
+                    <button type="button" class="json-ctrl-btn" data-action="expand">+ expand all</button>
                 </span>
             </div>
             <div class="json-tree">${treeHtml}</div>
@@ -106,12 +106,9 @@ function renderJsonLines(value, depth, key, isLast) {
     const summarySpan = `<span class="json-summary json-hidden" data-collapse="${id}">…${summary}${close}</span>`;
     const commaInline = commaHtml ? `<span class="json-comma-inline json-hidden" data-collapse="${id}">${commaHtml}</span>` : '';
 
-    let childrenHtml = '';
-    if (isArray) {
-        value.forEach((v, i) => { childrenHtml += renderJsonLines(v, depth + 1, null, i === value.length - 1); });
-    } else {
-        keys.forEach((k, i) => { childrenHtml += renderJsonLines(value[k], depth + 1, k, i === keys.length - 1); });
-    }
+    const childrenHtml = isArray
+        ? value.map((v, i) => renderJsonLines(v, depth + 1, null, i === value.length - 1)).join('')
+        : keys.map((k, i) => renderJsonLines(value[k], depth + 1, k, i === keys.length - 1)).join('');
 
     const openLine = `<div class="json-line" style="${pl}">${keyHtml}<span class="json-toggle" data-target="${id}">▼</span><span class="json-bracket">${open}</span>${summarySpan}${commaInline}</div>`;
     const childrenDiv = `<div class="json-children" id="${id}">${childrenHtml}<div class="json-close-line" style="${pl}"><span class="json-bracket">${close}</span>${commaHtml}</div></div>`;
@@ -121,16 +118,18 @@ function renderJsonLines(value, depth, key, isLast) {
 /**
  * Toggle a JSON node expanded/collapsed
  * @param {string} id - The json-children element ID
+ * @param {root} id - The scope
  */
-function jsonToggle(id) {
-    const children = document.getElementById(id);
+function jsonToggle(id, root) {
+    const scope = root || document;
+    const children = scope.getElementById ? scope.getElementById(id) : scope.querySelector('#' + id);
     if (!children) return;
     const willCollapse = !children.classList.contains('json-collapsed');
     children.classList.toggle('json-collapsed', willCollapse);
-    document.querySelectorAll(`[data-collapse="${id}"]`).forEach(el => {
+    scope.querySelectorAll(`[data-collapse="${id}"]`).forEach(el => {
         el.classList.toggle('json-hidden', !willCollapse);
     });
-    const toggle = document.querySelector(`.json-toggle[data-target="${id}"]`);
+    const toggle = scope.querySelector(`.json-toggle[data-target="${id}"]`);
     if (toggle) toggle.textContent = willCollapse ? '▶' : '▼';
 }
 
@@ -142,7 +141,7 @@ function jsonToggle(id) {
 function jsonToggleAll(viewer, collapse) {
     viewer.querySelectorAll('.json-children').forEach(el => {
         const isCollapsed = el.classList.contains('json-collapsed');
-        if (collapse !== isCollapsed) jsonToggle(el.id);
+        if (collapse !== isCollapsed) jsonToggle(el.id, viewer);
     });
 }
 
@@ -150,10 +149,11 @@ function _jsonViewerClickHandler(e) {
     const toggle = e.target.closest('.json-toggle[data-target]');
     const summary = e.target.closest('.json-summary[data-collapse]');
     const ctrl = e.target.closest('.json-ctrl-btn[data-action]');
+    const viewer = e.currentTarget;
     if (toggle) {
-        jsonToggle(toggle.dataset.target);
+        jsonToggle(toggle.dataset.target, viewer);
     } else if (summary) {
-        jsonToggle(summary.dataset.collapse);
+        jsonToggle(summary.dataset.collapse, viewer);
     } else if (ctrl) {
         jsonToggleAll(ctrl.closest('.json-viewer'), ctrl.dataset.action === 'collapse');
     }
