@@ -275,6 +275,11 @@ function Get-StaticAssetVersion {
 }
 
 function Add-StaticAssetVersions {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+        'PSUseSingularNouns',
+        '',
+        Justification = 'The function versions multiple asset references within one HTML document.'
+    )]
     param(
         [Parameter(Mandatory)]
         [string]$Html
@@ -1680,6 +1685,20 @@ try {
                     $defaultManifest = Get-CachedManifest -Dir $botRoot
                     $defaultName = if ($defaultManifest) { $defaultManifest.name } else { 'default' }
                     $skipDefault = $installedWfNames -contains $defaultName
+
+                    # Also skip default when an overlay workflow was applied during init
+                    if (-not $skipDefault) {
+                        $settingsFile = Join-Path $botRoot "settings\settings.default.json"
+                        if (Test-Path $settingsFile) {
+                            try {
+                                $sd = Get-Content $settingsFile -Raw | ConvertFrom-Json
+                                $activeWf = if ($sd.PSObject.Properties['workflow']) { $sd.workflow } else { $sd.profile }
+                                if ($activeWf -and $activeWf -ne 'default' -and $activeWf -ne $defaultName) {
+                                    $skipDefault = $true
+                                }
+                            } catch { Write-BotLog -Level 'Warn' -Message 'Failed to read settings for workflow check' -Exception $_ }
+                        }
+                    }
 
                     if (-not $skipDefault) {
                         $defaultTasks = if ($tasksByWorkflow.ContainsKey('__default__')) { $tasksByWorkflow['__default__'] } else { @{ todo = 0; in_progress = 0; done = 0; total = 0 } }
