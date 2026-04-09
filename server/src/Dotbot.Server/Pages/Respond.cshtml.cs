@@ -7,6 +7,9 @@ using System.IdentityModel.Tokens.Jwt;
 
 namespace Dotbot.Server.Pages;
 
+// Anti-forgery token validation is intentionally disabled because this page is accessed
+// via magic-link JWTs (single-use, time-limited tokens sent to external users who don't
+// have a session cookie). The MagicLinkAuthMiddleware enforces authentication instead.
 [IgnoreAntiforgeryToken]
 public class RespondModel : PageModel
 {

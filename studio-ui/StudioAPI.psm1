@@ -167,16 +167,31 @@ function Invoke-StudioRequest {
     $method = $req.HttpMethod
     $path = $req.Url.AbsolutePath
 
-    # Add CORS headers
-    $res.Headers.Add('Access-Control-Allow-Origin', '*')
-    $res.Headers.Add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-    $res.Headers.Add('Access-Control-Allow-Headers', 'Content-Type')
+    # CORS: restrict to localhost origins only (not wildcard) to prevent
+    # cross-origin attacks from arbitrary websites.
+    $origin = $req.Headers['Origin']
+    if ($origin -and $origin -match '^https?://localhost(:\d+)?$') {
+        $res.Headers.Add('Access-Control-Allow-Origin', $origin)
+        $res.Headers.Add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        $res.Headers.Add('Access-Control-Allow-Headers', 'Content-Type, X-Studio-Request')
+    }
 
     # Handle CORS preflight
     if ($method -eq 'OPTIONS') {
         $res.StatusCode = 204
         $res.Close()
         return $true
+    }
+
+    # CSRF protection: require X-Studio-Request header on state-changing requests.
+    # Browsers enforce CORS preflight for custom headers, blocking cross-origin attacks.
+    if ($method -in @('POST', 'PUT', 'DELETE')) {
+        $csrfHeader = $req.Headers['X-Studio-Request']
+        if ($csrfHeader -ne '1') {
+            Send-Error -Response $res -Message 'Missing CSRF header' -StatusCode 403
+            $res.Close()
+            return $true
+        }
     }
 
     try {
@@ -502,7 +517,8 @@ tasks: []
     }
     catch {
         try {
-            Send-Error -Response $res -Message $_.Exception.Message -StatusCode 500
+            # Return generic error to avoid leaking internal details (paths, stack traces)
+            Send-Error -Response $res -Message 'Internal server error' -StatusCode 500
         } catch {
             # Response may already be closed
         }

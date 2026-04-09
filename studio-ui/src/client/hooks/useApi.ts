@@ -7,6 +7,10 @@
 
 const BASE_URL = '/api/studio';
 
+// CSRF protection headers for state-changing requests.
+// The server requires X-Studio-Request on POST/PUT/DELETE to block cross-origin attacks.
+const CSRF_HEADERS: Record<string, string> = { 'X-Studio-Request': '1' };
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -50,7 +54,7 @@ export async function saveWorkflow(
 ): Promise<void> {
   const res = await fetch(`${BASE_URL}/${encodeURIComponent(name)}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CSRF_HEADERS },
     body: JSON.stringify({ yaml, layout }),
   });
   await handleResponse(res);
@@ -60,7 +64,7 @@ export async function saveWorkflow(
 export async function createWorkflow(name: string): Promise<void> {
   const res = await fetch(BASE_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CSRF_HEADERS },
     body: JSON.stringify({ name }),
   });
   await handleResponse(res);
@@ -70,7 +74,7 @@ export async function createWorkflow(name: string): Promise<void> {
 export async function copyWorkflow(sourceName: string, newName: string): Promise<void> {
   const res = await fetch(`${BASE_URL}/${encodeURIComponent(sourceName)}/copy`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CSRF_HEADERS },
     body: JSON.stringify({ newName }),
   });
   await handleResponse(res);
@@ -80,6 +84,7 @@ export async function copyWorkflow(sourceName: string, newName: string): Promise
 export async function deleteWorkflow(name: string): Promise<void> {
   const res = await fetch(`${BASE_URL}/${encodeURIComponent(name)}`, {
     method: 'DELETE',
+    headers: { ...CSRF_HEADERS },
   });
   await handleResponse(res);
 }
@@ -106,7 +111,7 @@ export async function readWorkflowFile(name: string, filePath: string): Promise<
 export async function saveWorkflowFile(name: string, filePath: string, content: string): Promise<void> {
   const res = await fetch(`${BASE_URL}/${encodeURIComponent(name)}/files/${encodeFilePath(filePath)}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', ...CSRF_HEADERS },
     body: content,
   });
   await handleResponse(res);
