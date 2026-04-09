@@ -1230,7 +1230,7 @@ if ($providerCliLoaded) {
     if ($codexConfig -and $codexConfig.permission_modes) {
         $codexAutoArgs = $null
         try {
-            $codexAutoArgs = Build-ProviderCliArgs -Config $codexConfig -Prompt "test" -ModelId "gpt-5.2-codex" -Streaming $false -PermissionMode "full-auto"
+            $codexAutoArgs = Build-ProviderCliArgs -Config $codexConfig -Prompt "test" -ModelId "gpt-5.4" -Streaming $false -PermissionMode "full-auto"
         } catch { Write-Verbose "Build args failed: $_" }
 
         if ($codexAutoArgs) {
@@ -1247,7 +1247,7 @@ if ($providerCliLoaded) {
     if ($geminiConfig -and $geminiConfig.permission_modes) {
         $geminiEditArgs = $null
         try {
-            $geminiEditArgs = Build-ProviderCliArgs -Config $geminiConfig -Prompt "test" -ModelId "gemini-2.5-pro" -Streaming $false -PermissionMode "auto_edit"
+            $geminiEditArgs = Build-ProviderCliArgs -Config $geminiConfig -Prompt "test" -ModelId "gemini-3-pro-preview" -Streaming $false -PermissionMode "auto_edit"
         } catch { Write-Verbose "Build args failed: $_" }
 
         if ($geminiEditArgs) {
