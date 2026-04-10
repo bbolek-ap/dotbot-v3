@@ -40,6 +40,7 @@ export function App() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('canvas');
   const [editorContext, setEditorContext] = useState<FileEditorContext | null>(null);
+  const [uiError, setUiError] = useState<string | null>(null);
   const resizingRef = useRef<'panel' | 'toolbox' | null>(null);
   const panelWidthRef = useRef(panelWidth);
   const toolboxWidthRef = useRef(toolboxWidth);
@@ -135,7 +136,11 @@ export function App() {
   }, []);
 
   const openFileEditor = useCallback((ctx: FileEditorContext) => {
-    if (!wf.currentName) return;
+    if (!wf.currentName) {
+      setUiError('Save the workflow first before editing recipe files.');
+      return;
+    }
+    setUiError(null);
     setEditorContext(ctx);
     setViewMode('fileEditor');
   }, [wf.currentName]);
@@ -295,12 +300,20 @@ export function App() {
 
         {wf.loading && <div className="loading-overlay">Loading...</div>}
 
-        {wf.error && (
-          <div className="error-toast">
-            {wf.error}
-            <button onClick={wf.clearError}>Dismiss</button>
-          </div>
-        )}
+        <div className="toast-stack">
+          {wf.error && (
+            <div className="error-toast">
+              {wf.error}
+              <button onClick={wf.clearError}>Dismiss</button>
+            </div>
+          )}
+          {uiError && (
+            <div className="error-toast">
+              {uiError}
+              <button onClick={() => setUiError(null)}>Dismiss</button>
+            </div>
+          )}
+        </div>
       </div>
     </ReactFlowProvider>
   );
