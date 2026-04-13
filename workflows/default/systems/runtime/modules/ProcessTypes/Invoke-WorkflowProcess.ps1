@@ -33,6 +33,43 @@ $Slot = $Context.Slot
 $Workflow = $Context.Workflow
 $permissionMode = $Context.PermissionMode
 
+# Build the parameter set for a task-runner script/task_gen invocation. Inspects
+# the target script's declared parameters and only forwards the ones it accepts,
+# so scripts that declare Settings / Model / WorkflowDir as mandatory keep working
+# while older scripts that don't declare them aren't broken by an unexpected-named-
+# parameter error. BotRoot and ProcessId are always passed — they're the contract.
+function Resolve-TaskScriptArgument {
+    param(
+        [Parameter(Mandatory)][string]$ScriptPath,
+        [Parameter(Mandatory)][string]$BotRoot,
+        [Parameter(Mandatory)][string]$ProcId,
+        $Settings,
+        [string]$ClaudeModelName,
+        [string]$WorkflowName
+    )
+    $built = @{ BotRoot = $BotRoot; ProcessId = $ProcId }
+    try {
+        $cmd = Get-Command -Name $ScriptPath -ErrorAction Stop
+        $params = $cmd.Parameters
+        if ($params.ContainsKey('Settings')) { $built['Settings'] = $Settings }
+        if ($params.ContainsKey('Model') -and $ClaudeModelName) { $built['Model'] = $ClaudeModelName }
+        if ($params.ContainsKey('WorkflowDir') -and $WorkflowName) {
+            $wfDir = Join-Path $BotRoot "workflows\$WorkflowName"
+            if (Test-Path $wfDir) { $built['WorkflowDir'] = $wfDir }
+        }
+    } catch {
+        # Get-Command failed (rare — the caller has already verified Test-Path).
+        # Fall back to the historical behaviour: pass Model and WorkflowDir
+        # unconditionally, skip Settings so unprepared scripts don't fail.
+        if ($ClaudeModelName) { $built['Model'] = $ClaudeModelName }
+        if ($WorkflowName) {
+            $wfDir = Join-Path $BotRoot "workflows\$WorkflowName"
+            if (Test-Path $wfDir) { $built['WorkflowDir'] = $wfDir }
+        }
+    }
+    return $built
+}
+
 # Initialize session for execution phase tracking
 $sessionResult = Invoke-SessionInitialize -Arguments @{ session_type = "autonomous" }
 if ($sessionResult.success) {
@@ -168,6 +205,21 @@ try {
         }
 
         if (-not $taskResult.task) {
+            # Workflow-filtered runner: if every task tagged with our workflow is
+            # already in a terminal state, the workflow is complete — exit cleanly
+            # instead of polling forever. Without this, a kickstart-via-repo runner
+            # that finishes its 8 phases would sit in the wait loop indefinitely,
+            # keeping workflow_alive=true in /api/state and blocking the UI's
+            # generic "Execute Tasks" Start button from launching a second,
+            # unfiltered runner to pick up tasks generated during the workflow.
+            if ($Workflow -and (Test-WorkflowComplete -WorkflowFilter $Workflow)) {
+                $completeMsg = "Workflow '$Workflow' complete — all workflow-scoped tasks in terminal state. Exiting task-runner."
+                Write-Status $completeMsg -Type Info
+                Write-ProcessActivity -Id $procId -ActivityType "text" -Message $completeMsg
+                Write-Diag "EXIT: Workflow '$Workflow' complete, no remaining pending tasks matching filter"
+                break
+            }
+
             if ($Continue -and -not $NoWait) {
                 $waitReason = if ($taskResult.message) { $taskResult.message } else { "No eligible tasks." }
                 Write-Status "No tasks available - waiting... ($waitReason)" -Type Info
@@ -183,6 +235,17 @@ try {
                     Reset-TaskIndex
                     $taskResult = Get-NextWorkflowTask -Verbose -WorkflowFilter $Workflow
                     if ($taskResult.task) { $foundTask = $true; break }
+
+                    # Re-check inside the wait loop: a workflow can also become
+                    # complete while we're waiting (e.g. the last matching task
+                    # was cancelled via MCP). Exit the runner in that case too.
+                    if ($Workflow -and (Test-WorkflowComplete -WorkflowFilter $Workflow)) {
+                        $completeMsg = "Workflow '$Workflow' complete — all workflow-scoped tasks in terminal state. Exiting task-runner."
+                        Write-Status $completeMsg -Type Info
+                        Write-ProcessActivity -Id $procId -ActivityType "text" -Message $completeMsg
+                        Write-Diag "EXIT: Workflow '$Workflow' complete during wait loop"
+                        break
+                    }
 
                     if (Test-DependencyDeadlock -ProcessId $procId) { break }
                 }
@@ -300,7 +363,7 @@ try {
 
             $typeSuccess = $false
             $typeError = $null
-            # Resolve script base: workflow dir or .bot/
+            # Resolve script base: workflow dir → systems/runtime/ → .bot/
             $scriptBase = $botRoot
             if ($task.workflow) {
                 $wfScriptBase = Join-Path $botRoot "workflows\$($task.workflow)"
@@ -310,6 +373,14 @@ try {
             # Pre-flight: verify script exists before attempting execution
             if ($taskTypeVal -in @('script', 'task_gen') -and $task.script_path) {
                 $resolvedScript = Join-Path $scriptBase $task.script_path
+                if (-not (Test-Path $resolvedScript)) {
+                    # Fallback: check systems/runtime/ (shared scripts like expand-task-groups.ps1)
+                    $runtimeCandidate = Join-Path $botRoot "systems\runtime\$($task.script_path)"
+                    if (Test-Path $runtimeCandidate) {
+                        $resolvedScript = $runtimeCandidate
+                        $scriptBase = Join-Path $botRoot "systems\runtime"
+                    }
+                }
                 if (-not (Test-Path $resolvedScript)) {
                     $typeError = "Script not found: $($task.script_path) (base: $scriptBase)"
                     Write-Status $typeError -Type Error
@@ -329,7 +400,8 @@ try {
                         $resolvedScript = Join-Path $scriptBase $task.script_path
                         Write-Status "Running script: $($task.script_path)" -Type Process
                         Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Executing script: $($task.script_path)"
-                        & $resolvedScript -BotRoot $botRoot -ProcessId $procId -Settings $settings
+                        $scriptArgs = Resolve-TaskScriptArgument -ScriptPath $resolvedScript -BotRoot $botRoot -ProcId $procId -Settings $settings -ClaudeModelName $claudeModelName -WorkflowName $task.workflow
+                        & $resolvedScript @scriptArgs
                         $typeSuccess = ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE)
                     }
                     'mcp' {
@@ -346,7 +418,8 @@ try {
                         $resolvedScript = Join-Path $scriptBase $task.script_path
                         Write-Status "Running task generator: $($task.script_path)" -Type Process
                         Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Generating tasks: $($task.script_path)"
-                        & $resolvedScript -BotRoot $botRoot -ProcessId $procId -Settings $settings
+                        $scriptArgs = Resolve-TaskScriptArgument -ScriptPath $resolvedScript -BotRoot $botRoot -ProcId $procId -Settings $settings -ClaudeModelName $claudeModelName -WorkflowName $task.workflow
+                        & $resolvedScript @scriptArgs
                         $typeSuccess = ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE)
                         # Reset task index so newly created tasks are discovered
                         Reset-TaskIndex

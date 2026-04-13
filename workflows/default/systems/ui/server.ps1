@@ -162,14 +162,14 @@ if (Test-Path $staticRoot) {
     Write-Phosphor " ✓" -Color Green
 } else {
     Write-Phosphor " ⚠" -Color Amber
-    Write-Status "Static directory not found: $staticRoot" -Type Warn
+    Write-BotLog -Level Warn -Message "Static directory not found: $staticRoot"
 }
 
 # Pre-warm reference cache (makes first Workflow tab file click instant)
 if (-not (Test-CacheValidity)) {
     Build-ReferenceCache | Out-Null
 } else {
-    Write-Status "Reference cache is valid (skipping rebuild)" -Type Success
+    Write-BotLog -Level Debug -ForceDisplay -Message "Reference cache is valid (skipping rebuild)"
 }
 
 # HTTP listener
@@ -179,14 +179,14 @@ Write-Phosphor "› Starting listener..." -Color Cyan -NoNewline
 try {
     $listener.Start()
     Write-Phosphor " ✓" -Color Green
-    Write-BotLog -Level Info -Message "Press Ctrl+C to stop"
+    Write-BotLog -Level Debug -ForceDisplay -Message "Press Ctrl+C to stop"
     Write-Separator -Width 70
 } catch {
     Write-Phosphor " ✗" -Color Red
     if ($_.Exception.Message -match 'conflicts with an existing registration') {
-        Write-Status "Port $Port is already in use. Try a different port: .\server.ps1 -Port <number>" -Type Error
+        Write-BotLog -Level Error -Message "Port $Port is already in use. Try a different port: .\server.ps1 -Port <number>"
     } else {
-        Write-Status "Error starting listener: $($_.Exception.Message)" -Type Error
+        Write-BotLog -Level Error -Message "Error starting listener" -Exception $_
     }
     exit 1
 }
@@ -402,30 +402,14 @@ try {
         $method = $request.HttpMethod
         $url = $request.Url.LocalPath
 
-        # Request logging - polling endpoints use single-line overwrite, others get newlines
         $script:requestCount++
-
-        # Refresh theme periodically (every 100 requests) to pick up UI changes
-        if ($script:requestCount % 100 -eq 0) {
-            if (Update-DotBotTheme) {
-                $t = Get-DotBotTheme
-            }
-        }
-
-        $isPollingEndpoint = $url -in @('/api/state', '/api/activity/tail', '/api/git-status', '/api/processes') -or $url -like '/api/process/*/output'
-        $logLine = "$($t.Bezel)[$timestamp]$($t.Reset) $($t.Label)$method$($t.Reset) $($t.Cyan)$url$($t.Reset) $($t.Bezel)(#$script:requestCount)$($t.Reset)"
-
-        if ($isPollingEndpoint) {
-            # Skip logging for high-frequency polling endpoints to avoid log bloat
-        } else {
-            Write-BotLog -Level Debug -Message ""
-            Write-BotLog -Level Info -Message "$logLine"
-        }
+        Write-BotLog -Level Debug -ForceDisplay -Message "[$timestamp] $method $url (#$script:requestCount)"
 
         # Route handler
         $statusCode = 200
         $contentType = "text/html; charset=utf-8"
         $content = ""
+        $binaryContent = $null
 
         # CSRF protection: require X-Dotbot-Request header on state-changing requests.
         # Browsers enforce CORS preflight for custom headers, blocking cross-origin attacks.
@@ -538,6 +522,86 @@ try {
                     break
                 }
 
+                "/api/project/summary" {
+                    # POST-only: this endpoint is side-effecting (reads project files and
+                    # invokes the LLM provider, burning tokens/compute). Routing it through
+                    # POST means the global CSRF check at the top of this handler rejects
+                    # cross-origin requests that lack `X-Dotbot-Request: 1`. Browsers
+                    # enforce CORS preflight for custom headers, so a malicious web page
+                    # cannot silently trigger provider calls against localhost.
+                    if ($method -ne "POST") {
+                        $statusCode = 405
+                        $contentType = "application/json; charset=utf-8"
+                        $content = @{ success = $false; error = "Method not allowed; use POST" } | ConvertTo-Json -Compress
+                        break
+                    }
+                    $contentType = "application/json; charset=utf-8"
+                    try {
+                        # Gather project documentation for context
+                        $docContext = ""
+                        $sources = @()
+                        foreach ($docFile in @("CLAUDE.md", "README.md")) {
+                            $docPath = Join-Path $projectRoot $docFile
+                            if (Test-Path -LiteralPath $docPath) {
+                                $raw = Get-Content -LiteralPath $docPath -Raw -ErrorAction SilentlyContinue
+                                if ($raw) {
+                                    $cap = [System.Math]::Min($raw.Length, 3000)
+                                    $docContext += "`n--- $docFile ---`n$($raw.Substring(0, $cap))`n"
+                                    $sources += $docFile
+                                }
+                            }
+                        }
+                        # Also check package.json / *.csproj for name+description
+                        $pkgJson = Join-Path $projectRoot "package.json"
+                        if (Test-Path -LiteralPath $pkgJson) {
+                            $raw = Get-Content -LiteralPath $pkgJson -Raw -ErrorAction SilentlyContinue
+                            if ($raw) {
+                                $cap = [System.Math]::Min($raw.Length, 1500)
+                                $docContext += "`n--- package.json ---`n$($raw.Substring(0, $cap))`n"
+                                $sources += "package.json"
+                            }
+                        }
+                        foreach ($csproj in @(Get-ChildItem -Path $projectRoot -Filter "*.csproj" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 2)) {
+                            $raw = Get-Content -LiteralPath $csproj.FullName -Raw -ErrorAction SilentlyContinue
+                            if ($raw) {
+                                $raw = $raw.Substring(0, [System.Math]::Min($raw.Length, 1500))
+                                $relPath = $csproj.FullName.Replace($projectRoot, "").TrimStart("\", "/")
+                                $docContext += "`n--- $relPath ---`n$raw`n"
+                                $sources += $relPath
+                            }
+                        }
+
+                        if (-not $docContext) {
+                            $content = @{ success = $false; error = "No project documentation found (no README.md, CLAUDE.md, or package.json)" } | ConvertTo-Json -Compress
+                        } else {
+                            # Import ProviderCLI and invoke a one-shot summary
+                            $providerModule = Join-Path $botRoot "systems\runtime\ProviderCLI\ProviderCLI.psm1"
+                            Import-Module $providerModule -Force -ErrorAction Stop
+
+                            $summaryPrompt = @"
+You are a project analyst. Based on the documentation below, write a concise project description (2-4 sentences) that covers:
+- What the project is and what problem it solves
+- Who it's for (target users)
+- Key technologies used
+
+Return ONLY the description paragraph, no headings, no bullet points, no markdown formatting. Write in third person.
+
+$docContext
+"@
+                            $summary = $summaryPrompt | Invoke-Provider
+                            if ($summary) {
+                                $summary = $summary.Trim()
+                                $content = @{ success = $true; summary = $summary; sources = $sources } | ConvertTo-Json -Depth 3 -Compress
+                            } else {
+                                $content = @{ success = $false; error = "Provider returned empty response" } | ConvertTo-Json -Compress
+                            }
+                        }
+                    } catch {
+                        $content = @{ success = $false; error = "Summary generation failed: $($_.Exception.Message)" } | ConvertTo-Json -Compress
+                    }
+                    break
+                }
+
                 # --- State & Polling ---
 
                 "/api/state" {
@@ -588,7 +652,7 @@ try {
                         try {
                             $result = Start-GitCommitAndPush
                             $content = $result | ConvertTo-Json -Compress
-                            Write-Status "Git commit-and-push launched as process (PID: $($result.pid))" -Type Info
+                            Write-BotLog -Level Info -Message "Git commit-and-push launched as process (PID: $($result.pid))"
                         } catch {
                             $statusCode = 500
                             $content = @{ success = $false; error = "Failed to start commit: $($_.Exception.Message)" } | ConvertTo-Json -Compress
@@ -606,7 +670,7 @@ try {
                     $contentType = "application/json; charset=utf-8"
                     $result = Get-AetherScanResult
                     if ($result.found) {
-                        Write-Status "Aether conduit discovered: $($result.conduit) (ID: $($result.id))" -Type Success
+                        Write-BotLog -Level Info -Message "Aether conduit discovered: $($result.conduit) (ID: $($result.id))"
                     }
                     $content = $result | ConvertTo-Json -Compress
                     break
@@ -1548,7 +1612,7 @@ try {
                                                         path = $relPath
                                                     }
                                                 } catch {
-                                                    Write-BotLog "Failed to save kickstart attachment '$safeName': $($_.Exception.Message)"
+                                                    Write-BotLog -Level 'Warn' -Message "Failed to save kickstart attachment '$safeName'" -Exception $_
                                                 }
                                             }
                                             if ($attachMeta.Count -gt 0) {
@@ -1739,7 +1803,7 @@ try {
                                 if ($activeWf -and $activeWf -ne 'default' -and $activeWf -ne $defaultName) {
                                     $skipDefault = $true
                                 }
-                            } catch { Write-BotLog -Level 'Warn' -Message 'Failed to read settings for workflow check' -Exception $_ }
+                            } catch { Write-BotLog -Level 'Debug' -Message 'Failed to read settings for workflow check' -Exception $_ }
                         }
                     }
 
@@ -2257,9 +2321,17 @@ try {
                             ".css" { "text/css; charset=utf-8" }
                             ".js" { "application/javascript; charset=utf-8" }
                             ".json" { "application/json; charset=utf-8" }
+                            ".svg" { "image/svg+xml" }
+                            ".ico" { "image/x-icon" }
+                            ".png" { "image/png" }
                             default { "application/octet-stream" }
                         }
-                        $content = Get-Content -LiteralPath $filePath -Raw
+                        $isBinary = $extension -in @('.ico', '.png', '.gif', '.jpg', '.jpeg', '.woff', '.woff2')
+                        if ($isBinary) {
+                            $binaryContent = [System.IO.File]::ReadAllBytes($filePath)
+                        } else {
+                            $content = Get-Content -LiteralPath $filePath -Raw
+                        }
                     } else {
                         $statusCode = 404
                         $content = "Not found: $url"
@@ -2269,11 +2341,7 @@ try {
         } catch {
             $statusCode = 500
             $content = "Server error: $($_.Exception.Message)"
-            Write-BotLog -Level Debug -Message ""
-            Write-Status "[$timestamp] ERROR: $($_.Exception.Message)" -Type Error
-            Write-BotLog -Level Error -Message "  Script: $($_.InvocationInfo.ScriptName)"
-            Write-BotLog -Level Error -Message "  Line: $($_.InvocationInfo.ScriptLineNumber)"
-            Write-BotLog -Level Error -Message "  Statement: $($_.InvocationInfo.Line.Trim())"
+            Write-BotLog -Level Error -Message "Route handler error: $($_.Exception.Message)" -Exception $_
         }
         } # end CSRF-safe block
 
@@ -2289,7 +2357,11 @@ try {
                 $response.Headers['Pragma'] = 'no-cache'
                 $response.Headers['Expires'] = '0'
             }
-            $buffer = [System.Text.Encoding]::UTF8.GetBytes($content)
+            if ($null -ne $binaryContent) {
+                $buffer = $binaryContent
+            } else {
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($content)
+            }
             $response.ContentLength64 = $buffer.Length
             if ($null -ne $response.OutputStream) {
                 $response.OutputStream.Write($buffer, 0, $buffer.Length)
@@ -2299,8 +2371,7 @@ try {
             if ($_.Exception.Message -match "network name is no longer available|connection was forcibly closed|broken pipe") {
                 # Silent handling for expected disconnects
             } else {
-                Write-BotLog -Level Debug -Message ""
-                Write-Status "Response write failed: $($_.Exception.Message)" -Type Warn
+                Write-BotLog -Level Warn -Message "Response write failed" -Exception $_
             }
             try { $response.Close() } catch { Write-BotLog -Level Debug -Message "Cleanup: failed to close response" -Exception $_ }
         }
@@ -2322,5 +2393,5 @@ try {
             Write-BotLog -Level Debug -Message "Cleanup: failed to stop HTTP listener" -Exception $_
         }
     }
-    Write-Status "Server stopped" -Type Warn
+    Write-BotLog -Level Info -Message "Server stopped"
 }
