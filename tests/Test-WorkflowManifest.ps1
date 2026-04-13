@@ -453,6 +453,44 @@ try {
         Assert-Equal -Name "Script task workflow" -Expected "default" -Actual $scriptJson.workflow
     }
 
+    # task_gen + workflow: "*.md" → should become prompt_template with prompt field
+    $taskGenPromptDef = @{
+        name     = "Plan Internet Research"
+        type     = "task_gen"
+        workflow = "02a-plan-internet-research.md"
+        priority = 1
+    }
+    $tgpResult = New-WorkflowTask -ProjectBotDir $taskBotDir -WorkflowName "default" -TaskDef $taskGenPromptDef
+    $tgpFile = Join-Path $taskBotDir "workspace\tasks\todo" $tgpResult.file
+    if (Test-Path $tgpFile) {
+        $tgpJson = Get-Content $tgpFile -Raw | ConvertFrom-Json
+        Assert-Equal -Name "task_gen+workflow .md maps to prompt_template type" `
+            -Expected "prompt_template" -Actual $tgpJson.type
+        Assert-Equal -Name "task_gen+workflow .md sets correct prompt path" `
+            -Expected "recipes/prompts/02a-plan-internet-research.md" -Actual $tgpJson.prompt
+        Assert-Equal -Name "task_gen+workflow .md workflow is folder name not filename" `
+            -Expected "default" -Actual $tgpJson.workflow
+    }
+
+    # task_gen + workflow: non-.md value → should stay task_gen (workflow name for filtering)
+    $taskGenFolterDef = @{
+        name     = "Generate Scoring Tasks"
+        type     = "task_gen"
+        workflow = "scoring"
+        script   = "generate-scoring-tasks.ps1"
+        priority = 2
+    }
+    $tgfResult = New-WorkflowTask -ProjectBotDir $taskBotDir -WorkflowName "scoring" -TaskDef $taskGenFolterDef
+    $tgfFile = Join-Path $taskBotDir "workspace\tasks\todo" $tgfResult.file
+    if (Test-Path $tgfFile) {
+        $tgfJson = Get-Content $tgfFile -Raw | ConvertFrom-Json
+        Assert-Equal -Name "task_gen+non-.md workflow stays task_gen type" `
+            -Expected "task_gen" -Actual $tgfJson.type
+        Assert-True -Name "task_gen+non-.md workflow has no prompt field" `
+            -Condition (-not $tgfJson.PSObject.Properties['prompt'] -or -not $tgfJson.prompt) `
+            -Message "Expected no prompt field on plain task_gen"
+    }
+
 } finally {
     Remove-Item -Path $taskRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

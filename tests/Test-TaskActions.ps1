@@ -227,9 +227,75 @@ try {
         -Condition ($ignoreMap['task-dependent'].blocking_task_ids -contains 'task-root') `
         -Message "Expected ignored dependency source to be recorded"
 
+    # Create a prompt_template task with a prompt field to verify index + task-get-next propagation
+    $ptTaskPath = Join-Path $todoDir "task-prompt-template.json"
+    [ordered]@{
+        id           = "task-prompt-template"
+        name         = "Plan Internet Research"
+        description  = "Run Claude with a workflow prompt to generate tasks"
+        category     = "workflow"
+        priority     = 1
+        effort       = "XS"
+        status       = "todo"
+        type         = "prompt_template"
+        prompt       = "recipes/prompts/02a-plan-internet-research.md"
+        workflow     = "default"
+        script_path  = $null
+        dependencies = @()
+        acceptance_criteria = @()
+        steps        = @()
+        applicable_standards = @()
+        applicable_agents    = @()
+        skip_analysis  = $true
+        skip_worktree  = $true
+        created_at   = "2026-04-13T00:00:00Z"
+        updated_at   = "2026-04-13T00:00:00Z"
+        completed_at = $null
+    } | ConvertTo-Json -Depth 10 | Set-Content -Path $ptTaskPath -Encoding UTF8
+
     $taskIndexModule = Join-Path $botDir "systems\mcp\modules\TaskIndexCache.psm1"
     Import-Module $taskIndexModule -Force
     Initialize-TaskIndex -TasksBaseDir $tasksBaseDir
+
+    # Verify TaskIndexCache stores the prompt field
+    $ptIndexEntry = (Get-TaskIndex).Todo['task-prompt-template']
+    Assert-True -Name "TaskIndexCache stores prompt field for prompt_template task" `
+        -Condition ($ptIndexEntry -and $ptIndexEntry.prompt -eq "recipes/prompts/02a-plan-internet-research.md") `
+        -Message "Expected index entry to carry prompt='recipes/prompts/02a-plan-internet-research.md'"
+
+    # Verify task-get-next script returns prompt field.
+    # Use an isolated temp index containing only the prompt_template task so priority
+    # ordering does not interfere with the subsequent ignore-state assertions.
+    $taskGetNextScript = Join-Path $botDir "systems\mcp\tools\task-get-next\script.ps1"
+    if (Test-Path $taskGetNextScript) {
+        # Stub Write-BotLog — not available outside the full runtime context
+        if (-not (Get-Command Write-BotLog -ErrorAction SilentlyContinue)) {
+            function Write-BotLog { param([string]$Level, [string]$Message, $Exception) }
+        }
+        . $taskGetNextScript
+
+        # Temp dir with only the prompt_template task
+        $ptIsolatedBase = Join-Path ([System.IO.Path]::GetTempPath()) "dotbot-pt-$([System.Guid]::NewGuid().ToString().Substring(0,8))"
+        $ptIsolatedTodo = Join-Path $ptIsolatedBase "todo"
+        New-Item -ItemType Directory -Path $ptIsolatedTodo -Force | Out-Null
+        Copy-Item -Path $ptTaskPath -Destination (Join-Path $ptIsolatedTodo "task-prompt-template.json") -Force
+
+        Initialize-TaskIndex -TasksBaseDir $ptIsolatedBase
+        $getNextResult = Invoke-TaskGetNext -Arguments @{ prefer_analysed = $false; verbose = $false }
+        Assert-True -Name "task-get-next returns prompt field on prompt_template task" `
+            -Condition ($getNextResult.task -and $getNextResult.task.prompt -eq "recipes/prompts/02a-plan-internet-research.md") `
+            -Message "Expected task-get-next to include prompt='recipes/prompts/02a-plan-internet-research.md'"
+        $getNextVerbose = Invoke-TaskGetNext -Arguments @{ prefer_analysed = $false; verbose = $true }
+        Assert-True -Name "task-get-next verbose returns prompt field on prompt_template task" `
+            -Condition ($getNextVerbose.task -and $getNextVerbose.task.prompt -eq "recipes/prompts/02a-plan-internet-research.md") `
+            -Message "Expected task-get-next verbose to include prompt field in returned task"
+
+        Remove-Item -Path $ptIsolatedBase -Recurse -Force -ErrorAction SilentlyContinue
+        # Restore main index (without the prompt_template task, which is priority 1 and would disrupt ordering tests)
+        Remove-Item -Path $ptTaskPath -Force -ErrorAction SilentlyContinue
+        Initialize-TaskIndex -TasksBaseDir $tasksBaseDir
+    }
+
     $nextTask = Get-NextTask
     Assert-Equal -Name "Get-NextTask skips ignored tasks and blocked dependents" `
         -Expected "task-free" `
