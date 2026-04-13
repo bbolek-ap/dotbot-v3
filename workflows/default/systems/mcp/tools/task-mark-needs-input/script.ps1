@@ -20,8 +20,11 @@ function Invoke-TaskMarkNeedsInput {
     $found = Find-TaskFileById -TaskId $taskId -SearchStatuses @('analysing', 'in-progress', 'needs-input')
     if (-not $found) { throw "Task with ID '$taskId' not found in 'analysing', 'in-progress', or 'needs-input' status" }
 
-    # Guard: refuse to add more questions if all questions are already answered
+    # Guard: refuse to add more questions if already in needs-input and all questions are answered.
+    # Only applies when the task is currently in needs-input (i.e. an active batch cycle), not
+    # on a fresh invocation from analysing/in-progress (e.g. after a task retry).
     if (($question -or $questionsArg) -and
+        $found.Status -eq 'needs-input' -and
         $found.Content.PSObject.Properties['all_questions_answered'] -and
         $found.Content.all_questions_answered -eq $true) {
         throw "all_questions_answered is true — all questions have been answered. Proceed to Step 4 (write summary, call task_mark_done). Do NOT call task_mark_needs_input again."
