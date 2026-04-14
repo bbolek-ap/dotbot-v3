@@ -158,7 +158,7 @@ The file format:
 | `estimated_task_count` | Yes | Expected number of tasks (2-8 per group) |
 | `depends_on` | Yes | Array of group IDs this depends on (empty for root groups) |
 | `priority_range` | Yes | `[min, max]` — priority range for tasks in this group |
-| `category_hint` | Yes | Default category for tasks: infrastructure, core, feature, enhancement |
+| `category_hint` | Yes | Default category for tasks in this group. Must be one of the six valid `category` enum values (see [Task Schema Reference](#task-schema-reference-inherited-by-phase-2b) below): `infrastructure`, `core`, `feature`, `enhancement`, `ui-ux`, or `bugfix`. Use `ui-ux` for all user-facing / frontend work. **Do NOT invent new categories** like `frontend`, `backend`, or `api` — the MCP `task_create_bulk` validator will reject them. |
 
 ---
 
