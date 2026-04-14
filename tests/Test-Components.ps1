@@ -47,7 +47,6 @@ $botDir = Join-Path $testProject ".bot"
 Push-Location $testProject
 & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dotbotDir "scripts\init-project.ps1") 2>&1 | Out-Null
 
-# Commit init files so git-clean verification passes during task_mark_done
 & git add -A 2>&1 | Out-Null
 & git commit -m "dotbot init" --quiet 2>&1 | Out-Null
 Pop-Location
@@ -416,6 +415,26 @@ if ((Test-Path $fileWatcherModule) -and (Test-Path $controlApiModule) -and (Test
 } else {
     Write-TestResult -Name "Process status sanitization test modules exist" -Status Fail -Message "One or more UI/process modules were not found in $botDir"
 }
+
+# Commit any framework file changes made by the tests above (e.g. config.json
+# stripping, settings backfill) so the integrity gate sees a clean state.
+Push-Location $testProject
+$manifestModule = Join-Path $botDir "systems\mcp\modules\FrameworkIntegrity.psm1"
+if (Test-Path $manifestModule) {
+    Import-Module $manifestModule -Force
+    $frameworkPaths = Get-FrameworkProtectedPaths
+    $manifestMod = Join-Path (Split-Path $manifestModule) ".." ".." ".." ".." "scripts" "Manifest.psm1" | Resolve-Path -ErrorAction SilentlyContinue
+    if (-not $manifestMod) { $manifestMod = Join-Path $dotbotDir "scripts\Manifest.psm1" }
+    if (Test-Path $manifestMod) {
+        Import-Module $manifestMod -Force
+        $null = New-DotbotManifest -ProjectRoot $testProject -ProtectedPaths $frameworkPaths -Generator 'test-setup'
+    }
+}
+& git add -A 2>&1 | Out-Null
+$env:DOTBOT_FORCE_COMMIT = "1"
+& git commit -m "test: sync framework state" --quiet 2>&1 | Out-Null
+$env:DOTBOT_FORCE_COMMIT = $null
+Pop-Location
 
 Write-Host ""
 

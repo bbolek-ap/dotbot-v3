@@ -1222,9 +1222,13 @@ function Submit-ForceCommit {
 
 # ---------------------------------------------------------------------------
 # Initial commit (fresh project): manifest + .bot/ + .mcp.json
+# First init (existing repo):     manifest + .bot/ + .mcp.json
 # --force path:                    manifest + framework paths (only if dirty)
 # ---------------------------------------------------------------------------
 $hasCommits = git -C $ProjectDir rev-parse HEAD 2>$null
+$manifestPath = Join-Path $ProjectDir ".bot" ".manifest.json"
+$isFirstInit = -not (Test-Path $manifestPath)
+
 if ($LASTEXITCODE -ne 0) {
     Write-DotbotCommand "Creating initial commit..."
     New-FrameworkManifest -Root $ProjectDir -Generator 'dotbot init' -Paths $frameworkPaths
@@ -1256,6 +1260,21 @@ if ($LASTEXITCODE -ne 0) {
         } else {
             Write-DotbotWarning "Framework update commit failed — run manually: DOTBOT_FORCE_COMMIT=1 git commit"
         }
+    }
+} elseif ($isFirstInit) {
+    # Existing repo, first dotbot init — same as fresh project but as a new commit.
+    Write-DotbotCommand "Committing dotbot files..."
+    New-FrameworkManifest -Root $ProjectDir -Generator 'dotbot init' -Paths $frameworkPaths
+    git -C $ProjectDir add .bot/ 2>$null
+    if (Test-Path (Join-Path $ProjectDir ".mcp.json")) {
+        git -C $ProjectDir add .mcp.json 2>$null
+    }
+    $rc = Submit-ForceCommit -Root $ProjectDir -Message "chore: initialize dotbot"
+    if ($rc -eq 0) {
+        Write-Success "dotbot commit created"
+    } else {
+        git -C $ProjectDir reset 2>$null
+        Write-DotbotWarning "dotbot commit failed — files unstaged"
     }
 }
 
