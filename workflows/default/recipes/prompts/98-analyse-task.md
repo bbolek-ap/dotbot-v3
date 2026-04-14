@@ -245,7 +245,7 @@ Identify which coding standards and decision constraints apply to this task.
    The `.bot/recipes/standards/global/` directory is optional — not every workflow ships it. Before issuing the glob, check whether the directory exists. If it does not exist, skip this step entirely and fall through to applying `{{APPLICABLE_STANDARDS}}` (above) plus whatever the task's own `applicable_standards` list specifies. Do **not** treat the missing directory as an error.
    ```
    # Only run if .bot/recipes/standards/global/ exists:
-   file_glob({ patterns: ["*.md"], search_dir: ".bot/recipes/standards/global", max_matches: 20, max_depth: 1, min_depth: 0 })
+   Glob({ pattern: "*.md", path: ".bot/recipes/standards/global" })
    ```
 
 2. **Determine applicable standards:**

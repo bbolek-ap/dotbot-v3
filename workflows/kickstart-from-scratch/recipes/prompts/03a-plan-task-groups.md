@@ -175,7 +175,7 @@ The per-group expansion prompt (`03b-expand-task-group.md`) will produce individ
 | `effort` | Yes | `XS` / `S` / `M` / `L` / `XL` (see sizing table below) |
 | `acceptance_criteria` | Yes | Array of specific, testable success conditions — see quality bar below |
 | `steps` | No | Implementation steps for guidance |
-| `dependencies` | No | Array of task IDs this depends on (within or across groups) |
+| `dependencies` | No | Array of task IDs *or* task names/slugs this depends on (within or across groups). `task_create_bulk` accepts both forms; 03b's intra-batch references use names, cross-batch typically use IDs once known. |
 | `applicable_standards` | No | Standards files to read before implementing |
 | `applicable_agents` | No | Agent files to use for implementation |
 | `applicable_decisions` | No | Decisions constraining this task (narrowed from the group's list) |

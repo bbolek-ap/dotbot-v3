@@ -1123,6 +1123,9 @@ $autonomousTaskPrompts = @(
 )
 foreach ($pf in $autonomousTaskPrompts) {
     $relName = Split-Path $pf -Leaf
+    # Walk up 3 parents to reach the workflow directory (e.g. "workflows/default")
+    # then take its leaf to get the workflow name ("default", "kickstart-via-jira").
+    # Path structure: workflows/<workflow>/recipes/prompts/<file>.md.
     $parentDir = Split-Path (Split-Path (Split-Path (Split-Path $pf -Parent) -Parent) -Parent) -Leaf
     Assert-PathExists -Name "Fix#A: $parentDir/$relName exists" -Path $pf
     $src = Get-Content $pf -Raw
