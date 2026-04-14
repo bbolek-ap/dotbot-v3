@@ -1168,6 +1168,44 @@ Assert-True -Name "Fix#B: 03b cross-links to 03a for schema/criteria/sizing" `
 Assert-True -Name "Fix#B: 03b tells agent not to relax constraints during expansion" `
     -Condition ($expandTaskGroupSrc -match 'do\s+not\s+relax\s+them\s+during\s+expansion')
 
+# ── Batch 2, Fix C: 98-analyse-task.md must guard mission/tech-stack/entity-model
+# reads against the current task's outputs list, so tasks that produce those
+# files (e.g. kickstart Product Documents) do not error during pre-flight
+# analysis trying to read files they are supposed to create.
+$analyseTaskPath = Join-Path $repoRoot "workflows\default\recipes\prompts\98-analyse-task.md"
+Assert-PathExists -Name "Fix#C: 98-analyse-task.md exists" -Path $analyseTaskPath
+$analyseTaskSrc = Get-Content $analyseTaskPath -Raw
+Assert-True -Name "Fix#C: 98-analyse-task.md has skip-if-produced guard in Phase 2" `
+    -Condition ($analyseTaskSrc -match '(?s)Phase\s+2:\s+Entity\s+Detection.*?Skip-if-produced\s+guard')
+Assert-True -Name "Fix#C: 98-analyse-task.md has skip-if-produced guard in Phase 6" `
+    -Condition ($analyseTaskSrc -match '(?s)Phase\s+6:\s+Product\s+Context\s+Extraction.*?Skip-if-produced\s+guard')
+Assert-True -Name "Fix#C: 98-analyse-task.md entity-model read is marked skip-if-outputs" `
+    -Condition ($analyseTaskSrc -match 'Read\s+entity\s+model[^\r\n]*skip\s+if\s+in\s+task\s+`outputs`')
+Assert-True -Name "Fix#C: 98-analyse-task.md mission read is marked skip-if-outputs" `
+    -Condition ($analyseTaskSrc -match 'Read\s+mission[^\r\n]*skip\s+if\s+in\s+task\s+`outputs`')
+Assert-True -Name "Fix#C: 98-analyse-task.md refers to task outputs list for the guard" `
+    -Condition ($analyseTaskSrc -match "task's\s+``outputs``\s+list")
+
+# ── Batch 2, Fix D: 98-analyse-task.md must treat .bot/recipes/standards/global
+# as an optional directory; skip the glob if it does not exist.
+Assert-True -Name "Fix#D: 98-analyse-task.md marks standards/global listing as skip-if-missing" `
+    -Condition ($analyseTaskSrc -match '(?s)List\s+available\s+standards\s+\(skip\s+if\s+directory\s+missing\)')
+Assert-True -Name "Fix#D: 98-analyse-task.md describes standards/global as optional" `
+    -Condition ($analyseTaskSrc -match '`\.bot/recipes/standards/global/`\s+directory\s+is\s+optional')
+Assert-True -Name "Fix#D: 98-analyse-task.md tells agent not to treat missing standards/global as error" `
+    -Condition ($analyseTaskSrc -match 'Do\s+\*\*not\*\*\s+treat\s+the\s+missing\s+directory\s+as\s+an\s+error')
+
+# ── Batch 2, Fix E: 03a category_hint field-reference row must list the full
+# six-value enum and forbid inventing new categories like `frontend`.
+Assert-True -Name "Fix#E: 03a category_hint row lists ui-ux enum value" `
+    -Condition ($planTaskGroupsSrc -match '(?s)\|\s+`category_hint`.*?`ui-ux`')
+Assert-True -Name "Fix#E: 03a category_hint row lists bugfix enum value" `
+    -Condition ($planTaskGroupsSrc -match '(?s)\|\s+`category_hint`.*?`bugfix`')
+Assert-True -Name "Fix#E: 03a category_hint row forbids inventing new categories" `
+    -Condition ($planTaskGroupsSrc -match '(?s)`category_hint`.*?Do\s+NOT\s+invent\s+new\s+categories')
+Assert-True -Name "Fix#E: 03a category_hint row cites task_create_bulk validator" `
+    -Condition ($planTaskGroupsSrc -match '(?s)`category_hint`.*?`task_create_bulk`\s+validator')
+
 Write-Host ""
 
 # ═══════════════════════════════════════════════════════════════════
