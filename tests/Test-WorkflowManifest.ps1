@@ -513,6 +513,43 @@ try {
             -Condition ($null -eq $noPostJson.PSObject.Properties['post_script'])
     }
 
+    # task_gen with workflow field → stores workflow_prompt (fix: #263)
+    $taskGenWithPromptDef = @{
+        name     = "Plan Internet Research"
+        type     = "task_gen"
+        workflow = "02a-plan-internet-research.md"
+        priority = 3
+    }
+    $tgPromptResult = New-WorkflowTask -ProjectBotDir $taskBotDir -WorkflowName "kickstart-via-jira" -TaskDef $taskGenWithPromptDef
+    $tgPromptFile = Join-Path $taskBotDir "workspace\tasks\todo" $tgPromptResult.file
+    if (Test-Path $tgPromptFile) {
+        $tgPromptJson = Get-Content $tgPromptFile -Raw | ConvertFrom-Json
+        Assert-Equal -Name "task_gen+workflow stores workflow_prompt" `
+            -Expected "02a-plan-internet-research.md" -Actual $tgPromptJson.workflow_prompt
+        Assert-Equal -Name "task_gen+workflow: type remains task_gen" `
+            -Expected "task_gen" -Actual $tgPromptJson.type
+        Assert-Equal -Name "task_gen+workflow: workflow field is workflow name" `
+            -Expected "kickstart-via-jira" -Actual $tgPromptJson.workflow
+    }
+
+    # task_gen WITHOUT workflow field → workflow_prompt absent (keeps JSON clean)
+    $taskGenNoPromptDef = @{
+        name        = "Generate Tasks Script"
+        type        = "task_gen"
+        script      = "gen-tasks.ps1"
+        priority    = 3
+    }
+    $tgNoPromptResult = New-WorkflowTask -ProjectBotDir $taskBotDir -WorkflowName "default" -TaskDef $taskGenNoPromptDef
+    $tgNoPromptFile = Join-Path $taskBotDir "workspace\tasks\todo" $tgNoPromptResult.file
+    if (Test-Path $tgNoPromptFile) {
+        $tgNoPromptJson = Get-Content $tgNoPromptFile -Raw | ConvertFrom-Json
+        Assert-True -Name "task_gen without workflow: workflow_prompt absent" `
+            -Condition ($null -eq $tgNoPromptJson.PSObject.Properties['workflow_prompt']) `
+            -Message "workflow_prompt should be absent when workflow field not set"
+        Assert-Equal -Name "task_gen without workflow: script_path set" `
+            -Expected "gen-tasks.ps1" -Actual $tgNoPromptJson.script_path
+    }
+
 } finally {
     Remove-Item -Path $taskRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

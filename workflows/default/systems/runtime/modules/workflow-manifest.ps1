@@ -308,6 +308,11 @@ function New-WorkflowTask {
 
     # Optional fields — only set if declared (keeps task JSON clean)
     if ($scriptPath)                           { $task["script_path"] = $scriptPath }
+    # task_gen tasks that reference a workflow prompt file — store the prompt filename
+    # so the runtime can run Claude with it (instead of looking for a script)
+    if ($type -eq 'task_gen' -and $TaskDef['workflow']) {
+        $task["workflow_prompt"] = $TaskDef['workflow']
+    }
     if ($mcpTool)                              { $task["mcp_tool"] = $mcpTool }
     if ($mcpArgs -and $mcpArgs.Count -gt 0)    { $task["mcp_args"] = $mcpArgs }
     if ($TaskDef['acceptance_criteria'])        { $task["acceptance_criteria"] = @($TaskDef['acceptance_criteria']) }

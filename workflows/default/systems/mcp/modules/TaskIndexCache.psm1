@@ -428,6 +428,7 @@ function Update-TaskIndex {
                     ignore = $content.ignore
                     type = $content.type
                     script_path = $content.script_path
+                    workflow_prompt = $content.workflow_prompt
                     mcp_tool = $content.mcp_tool
                     mcp_args = $content.mcp_args
                     skip_analysis = $content.skip_analysis

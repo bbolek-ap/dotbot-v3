@@ -878,6 +878,60 @@ try {
         -Condition ($null -ne $badTypeResponse -and $null -ne $badTypeResponse.error) `
         -Message "Expected error for invalid type"
 
+    # task_get_next returns workflow_prompt for task_gen tasks (fix: #263)
+    # Create a task_gen task with workflow_prompt directly in the task file
+    $wfPromptTaskId = [System.Guid]::NewGuid().ToString()
+    $wfPromptTask = [ordered]@{
+        id              = $wfPromptTaskId
+        name            = "Plan Internet Research Test"
+        description     = "Test: task_gen with workflow_prompt"
+        category        = "workflow"
+        priority        = 1
+        effort          = "XS"
+        status          = "todo"
+        type            = "task_gen"
+        workflow        = "kickstart-via-jira"
+        workflow_prompt = "02a-plan-internet-research.md"
+        dependencies    = @()
+        skip_analysis   = $true
+        skip_worktree   = $true
+        created_at      = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+        updated_at      = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")
+        completed_at    = $null
+    }
+    $wfPromptSlug = "plan-internet-research-test-$($wfPromptTaskId.Substring(0,8))"
+    $wfPromptFile = Join-Path (Join-Path $botDir "workspace\tasks\todo") "$wfPromptSlug.json"
+    $wfPromptTask | ConvertTo-Json -Depth 5 | Set-Content $wfPromptFile -Encoding utf8NoBOM
+
+    $requestId++
+    $getNextWfPromptResponse = Send-McpRequest -Process $mcpProcess -Request @{
+        jsonrpc = '2.0'
+        id      = $requestId
+        method  = 'tools/call'
+        params  = @{
+            name      = 'task_get_next'
+            arguments = @{ verbose = $true }
+        }
+    }
+
+    if ($getNextWfPromptResponse -and $getNextWfPromptResponse.result) {
+        $gnWfText = $getNextWfPromptResponse.result.content[0].text
+        $gnWfObj  = $gnWfText | ConvertFrom-Json
+        if ($gnWfObj.success -and $gnWfObj.task) {
+            Assert-Equal -Name "task_get_next returns workflow_prompt field" `
+                -Expected "02a-plan-internet-research.md" -Actual $gnWfObj.task.workflow_prompt
+        } else {
+            Assert-True -Name "task_get_next returns workflow_prompt field" `
+                -Condition $false -Message "No task returned: $gnWfText"
+        }
+    } else {
+        Assert-True -Name "task_get_next returns workflow_prompt field" `
+            -Condition $false -Message "No response from task_get_next"
+    }
+
+    # Cleanup: remove the test task file
+    Remove-Item $wfPromptFile -Force -ErrorAction SilentlyContinue
+
     Write-Host ""
 
     # ═══════════════════════════════════════════════════════════════════

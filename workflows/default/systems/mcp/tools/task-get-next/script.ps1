@@ -197,6 +197,7 @@ function Invoke-TaskGetNext {
             skip_analysis = $nextTask.skip_analysis
             skip_worktree = $nextTask.skip_worktree
             workflow = $nextTask.workflow
+            workflow_prompt = $nextTask.workflow_prompt
             model = $nextTask.model
         }
     } else {
@@ -209,6 +210,7 @@ function Invoke-TaskGetNext {
             category = $nextTask.category
             type = $nextTask.type
             script_path = $nextTask.script_path
+            workflow_prompt = $nextTask.workflow_prompt
             mcp_tool = $nextTask.mcp_tool
             mcp_args = $nextTask.mcp_args
             workflow = $nextTask.workflow

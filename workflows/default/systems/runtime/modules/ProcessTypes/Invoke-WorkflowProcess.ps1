@@ -333,6 +333,24 @@ try {
 
         # --- Task type dispatch (script / mcp / task_gen bypass Claude entirely) ---
         $taskTypeVal = if ($task.type) { $task.type } else { 'prompt' }
+        # task_gen with workflow_prompt: run Claude with a specific prompt to create tasks
+        # — falls through to the normal analysis+execution path below
+        if ($taskTypeVal -eq 'task_gen' -and $task.workflow_prompt) {
+            $promptBase = Join-Path $botRoot "recipes\prompts"
+            if ($task.workflow) {
+                $wfPromptsBase = Join-Path $botRoot "workflows\$($task.workflow)\recipes\prompts"
+                if (Test-Path $wfPromptsBase) { $promptBase = $wfPromptsBase }
+            }
+            $templatePath = Join-Path $promptBase $task.workflow_prompt
+            if (Test-Path $templatePath) {
+                $executionPromptTemplate = Get-Content $templatePath -Raw
+                Write-Status "Using task_gen prompt: $($task.workflow_prompt)" -Type Info
+                Write-ProcessActivity -Id $procId -ActivityType "text" -Message "Task-gen prompt: $($task.workflow_prompt)"
+            } else {
+                Write-Status "task_gen prompt not found: $templatePath" -Type Warn
+            }
+            $taskTypeVal = 'prompt'
+        }
         # prompt_template uses Claude but with a workflow-specific prompt file
         # — falls through to the normal analysis+execution path below
         if ($taskTypeVal -eq 'prompt_template' -and $task.prompt) {
@@ -371,6 +389,18 @@ try {
             }
 
             # Pre-flight: verify script exists before attempting execution
+            # task_gen with workflow_prompt is handled above (falls through to prompt path)
+            if ($taskTypeVal -in @('script', 'task_gen') -and -not $task.script_path -and -not $task.workflow_prompt) {
+                $typeError = "Missing script_path for $taskTypeVal task: $($task.name)"
+                Write-Status $typeError -Type Error
+                Write-ProcessActivity -Id $procId -ActivityType "error" -Message "$($task.name): $typeError"
+                try {
+                    Invoke-TaskMarkSkipped -Arguments @{ task_id = $task.id; skip_reason = "non-recoverable" } | Out-Null
+                } catch { Write-BotLog -Level Debug -Message "Logging operation failed" -Exception $_ }
+                $TaskId = $null; $processData.task_id = $null; $processData.task_name = $null
+                Start-Sleep -Seconds 3
+                continue
+            }
             if ($taskTypeVal -in @('script', 'task_gen') -and $task.script_path) {
                 $resolvedScript = Join-Path $scriptBase $task.script_path
                 if (-not (Test-Path $resolvedScript)) {
@@ -386,7 +416,7 @@ try {
                     Write-Status $typeError -Type Error
                     Write-ProcessActivity -Id $procId -ActivityType "error" -Message "$($task.name): $typeError"
                     try {
-                        Invoke-TaskMarkSkipped -Arguments @{ task_id = $task.id; skip_reason = $typeError } | Out-Null
+                        Invoke-TaskMarkSkipped -Arguments @{ task_id = $task.id; skip_reason = "non-recoverable" } | Out-Null
                     } catch { Write-BotLog -Level Debug -Message "Logging operation failed" -Exception $_ }
                     $TaskId = $null; $processData.task_id = $null; $processData.task_name = $null
                     Start-Sleep -Seconds 3
@@ -477,7 +507,7 @@ try {
             } else {
                 Write-Status "Task failed: $($task.name)" -Type Error
                 try {
-                    Invoke-TaskMarkSkipped -Arguments @{ task_id = $task.id; skip_reason = "$taskTypeVal execution failed: $typeError" } | Out-Null
+                    Invoke-TaskMarkSkipped -Arguments @{ task_id = $task.id; skip_reason = "non-recoverable" } | Out-Null
                 } catch { Write-BotLog -Level Debug -Message "Session operation failed" -Exception $_ }
             }
 
