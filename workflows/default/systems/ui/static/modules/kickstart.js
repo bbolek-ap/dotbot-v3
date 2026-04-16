@@ -1460,8 +1460,8 @@ function renderOverviewKickstartPhases(workflows) {
             : '';
 
         html += `
-            <div class="wf-accordion-section${isCollapsed ? ' collapsed' : ''}" data-workflow="${escapeHtml(wf.workflow_name)}">
-                <div class="chain-layer-header wf-accordion-header" data-workflow="${escapeHtml(wf.workflow_name)}">
+            <div class="wf-accordion-section${isCollapsed ? ' collapsed' : ''}" data-workflow="${escapeAttr(wf.workflow_name)}">
+                <div class="chain-layer-header wf-accordion-header" data-workflow="${escapeAttr(wf.workflow_name)}">
                     ${statusLed}
                     <span class="chain-layer-title">${escapeHtml(wf.workflow_name)}</span>
                     <span class="chain-layer-count">${doneCount}/${totalCount}</span>
@@ -1494,7 +1494,7 @@ function renderOverviewKickstartPhases(workflows) {
         if (wf.status === 'running') {
             html += `<div class="kickstart-resume-row"><button class="kickstart-resume-btn" disabled>RUNNING...</button></div>`;
         } else if (wf.can_resume) {
-            html += `<div class="kickstart-resume-row"><button class="kickstart-resume-btn" data-resume-wf="${escapeHtml(wf.workflow_name)}">RESUME</button></div>`;
+            html += `<div class="kickstart-resume-row"><button class="kickstart-resume-btn" data-resume-wf="${escapeAttr(wf.workflow_name)}">RESUME</button></div>`;
         } else if (wf.status === 'completed') {
             html += `<div class="kickstart-resume-row"><button class="kickstart-resume-btn" disabled>COMPLETED</button></div>`;
         }
