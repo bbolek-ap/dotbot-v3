@@ -522,15 +522,14 @@ try {
     }
     $tgPromptResult = New-WorkflowTask -ProjectBotDir $taskBotDir -WorkflowName "kickstart-via-jira" -TaskDef $taskGenWithPromptDef
     $tgPromptFile = Join-Path $taskBotDir "workspace\tasks\todo" $tgPromptResult.file
-    if (Test-Path $tgPromptFile) {
-        $tgPromptJson = Get-Content $tgPromptFile -Raw | ConvertFrom-Json
-        Assert-Equal -Name "task_gen+workflow stores workflow_prompt" `
-            -Expected "02a-plan-internet-research.md" -Actual $tgPromptJson.workflow_prompt
-        Assert-Equal -Name "task_gen+workflow: type remains task_gen" `
-            -Expected "task_gen" -Actual $tgPromptJson.type
-        Assert-Equal -Name "task_gen+workflow: workflow field is workflow name" `
-            -Expected "kickstart-via-jira" -Actual $tgPromptJson.workflow
-    }
+    Assert-PathExists -Path $tgPromptFile -Name "task_gen+workflow creates task file"
+    $tgPromptJson = Get-Content $tgPromptFile -Raw | ConvertFrom-Json
+    Assert-Equal -Name "task_gen+workflow stores workflow_prompt" `
+        -Expected "02a-plan-internet-research.md" -Actual $tgPromptJson.workflow_prompt
+    Assert-Equal -Name "task_gen+workflow: type remains task_gen" `
+        -Expected "task_gen" -Actual $tgPromptJson.type
+    Assert-Equal -Name "task_gen+workflow: workflow field is workflow name" `
+        -Expected "kickstart-via-jira" -Actual $tgPromptJson.workflow
 
     # task_gen WITHOUT workflow field → workflow_prompt absent (keeps JSON clean)
     $taskGenNoPromptDef = @{
