@@ -207,7 +207,6 @@ dotbot update                  # Update global installation
 │   ├── sessions/       # Session history + run logs
 │   ├── product/        # Product docs (mission, tech stack, entity model)
 │   ├── plans/          # Execution plans
-│   ├── feedback/       # Structured problem logs (pending/applied/archived)
 │   └── reports/        # Generated reports
 ├── hooks/              # Project-specific scripts (dev, verify, steering)
 ├── init.ps1            # IDE integration setup
