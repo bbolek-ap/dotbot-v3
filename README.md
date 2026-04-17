@@ -71,7 +71,7 @@ irm https://raw.githubusercontent.com/andresharpe/dotbot/main/install-remote.ps1
 
 **PowerShell Gallery:**
 ```powershell
-Install-Module dotbot -Scope CurrentUser
+Install-Module Dotbot -Scope CurrentUser
 ```
 
 **Scoop (Windows):**
