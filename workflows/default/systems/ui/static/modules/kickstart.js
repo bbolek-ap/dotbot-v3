@@ -23,6 +23,14 @@ let kickstartSubmitting = false; // in-flight guard against double submit
  * Checks if this is a new project and sets up event handlers
  */
 async function initKickstart() {
+    // Seed elements that carry a data-default with the default text so the
+    // modal never briefly renders with an empty label before the dialog
+    // config arrives. data-default stays the single source of truth (see
+    // #kickstart-interview-label / #kickstart-interview-hint in index.html).
+    document.querySelectorAll('[data-default]').forEach(el => {
+        if (!el.textContent) el.textContent = el.dataset.default;
+    });
+
     try {
         const response = await fetch(`${API_BASE}/api/product/list`);
         if (response.ok) {
