@@ -155,7 +155,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ needs.release.outputs.version }}"
-          $staging = "publish-staging/dotbot"
+          $staging = "publish-staging/Dotbot"
           New-Item -ItemType Directory -Path $staging -Force
           Copy-Item dotbot.psd1, dotbot.psm1, install.ps1, install-remote.ps1, LICENSE, README.md -Destination $staging
           Copy-Item -Recurse scripts, profiles -Destination $staging
@@ -164,14 +164,17 @@ jobs:
           New-Item -ItemType Directory -Path $studioStaging -Force
           Copy-Item studio-ui/server.ps1, studio-ui/StudioAPI.psm1 -Destination $studioStaging
           Copy-Item -Recurse studio-ui/static -Destination (Join-Path $studioStaging 'static')
-          Update-ModuleManifest -Path "$staging/dotbot.psd1" -ModuleVersion $version
+          # Rename to PascalCase for PSGallery convention
+          Rename-Item "$staging/dotbot.psd1" "Dotbot.psd1"
+          Rename-Item "$staging/dotbot.psm1" "Dotbot.psm1"
+          Update-ModuleManifest -Path "$staging/Dotbot.psd1" -RootModule 'Dotbot.psm1' -ModuleVersion $version
 
       - name: Publish
         shell: pwsh
         env:
           PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}
         run: |
-          Publish-Module -Path "publish-staging/dotbot" -NuGetApiKey $env:PSGALLERY_API_KEY -Verbose
+          Publish-Module -Path "publish-staging/Dotbot" -NuGetApiKey $env:PSGALLERY_API_KEY -Verbose
 
   # ── Update Scoop manifest ──────────────────────────────────
   update-scoop:
