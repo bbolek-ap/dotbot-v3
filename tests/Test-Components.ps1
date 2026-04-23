@@ -4860,6 +4860,90 @@ if (Test-Path $inboxWatcherModule) {
 }
 
 # ═══════════════════════════════════════════════════════════════════
+# --- Test-TaskIsMandatory (#213 mandatory halt) ---
+# ═══════════════════════════════════════════════════════════════════
+
+$workflowProcessScript = Join-Path $dotbotDir "workflows\default\systems\runtime\modules\ProcessTypes\Invoke-WorkflowProcess.ps1"
+if (Test-Path $workflowProcessScript) {
+    # Extract Test-TaskIsMandatory via AST so we test the real function without running the full script
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($workflowProcessScript, [ref]$null, [ref]$null)
+    $funcAst = $ast.FindAll({
+        $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $args[0].Name -eq 'Test-TaskIsMandatory'
+    }, $false) | Select-Object -First 1
+
+    if ($funcAst) {
+        Invoke-Expression $funcAst.Extent.Text
+
+        # PSCustomObject: no optional property → mandatory
+        $taskNoOptional = [PSCustomObject]@{ name = 'task-a' }
+        Assert-True -Name "Test-TaskIsMandatory: missing optional → mandatory" `
+            -Condition (Test-TaskIsMandatory $taskNoOptional) `
+            -Message "Task without optional field should be treated as mandatory"
+
+        # PSCustomObject: optional=$false → mandatory
+        $taskOptionalFalse = [PSCustomObject]@{ name = 'task-b'; optional = $false }
+        Assert-True -Name "Test-TaskIsMandatory: optional=false → mandatory" `
+            -Condition (Test-TaskIsMandatory $taskOptionalFalse) `
+            -Message "Task with optional=false should be treated as mandatory"
+
+        # PSCustomObject: optional=$true → not mandatory
+        $taskOptionalTrue = [PSCustomObject]@{ name = 'task-c'; optional = $true }
+        Assert-True -Name "Test-TaskIsMandatory: optional=true → not mandatory" `
+            -Condition (-not (Test-TaskIsMandatory $taskOptionalTrue)) `
+            -Message "Task with optional=true should NOT be treated as mandatory"
+
+        # Hashtable (IDictionary): optional=$true → not mandatory
+        $dictTask = @{ name = 'task-d'; optional = $true }
+        Assert-True -Name "Test-TaskIsMandatory: hashtable optional=true → not mandatory" `
+            -Condition (-not (Test-TaskIsMandatory $dictTask)) `
+            -Message "Hashtable task with optional=true should NOT be treated as mandatory"
+
+        # Hashtable: optional missing → mandatory
+        $dictTaskNoOpt = @{ name = 'task-e' }
+        Assert-True -Name "Test-TaskIsMandatory: hashtable no optional → mandatory" `
+            -Condition (Test-TaskIsMandatory $dictTaskNoOpt) `
+            -Message "Hashtable task without optional should be treated as mandatory"
+    } else {
+        Write-TestResult -Name "Test-TaskIsMandatory function extraction" -Status Fail -Message "Function not found in $workflowProcessScript"
+    }
+} else {
+    Write-TestResult -Name "Test-TaskIsMandatory tests" -Status Skip -Message "Invoke-WorkflowProcess.ps1 not found"
+}
+
+# New-WorkflowTask optional propagation
+$workflowManifestScript = Join-Path $dotbotDir "workflows\default\systems\runtime\modules\workflow-manifest.ps1"
+if (Test-Path $workflowManifestScript) {
+    $manifestTmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "dotbot-manifest-test-$(Get-Random)"
+    $manifestTasksDir = Join-Path $manifestTmpDir "workspace\tasks\todo"
+    New-Item -Path $manifestTasksDir -ItemType Directory -Force | Out-Null
+    try {
+        . $workflowManifestScript
+        $optionalTask = @{ name = 'optional-step'; type = 'script'; script = 'scripts/foo.ps1'; optional = $true }
+        New-WorkflowTask -ProjectBotDir $manifestTmpDir -WorkflowName 'test-wf' -TaskDef $optionalTask | Out-Null
+        $written = Get-ChildItem -Path $manifestTasksDir -Filter "*.json" | Select-Object -First 1
+        $taskJson = $written | Get-Content -Raw | ConvertFrom-Json
+        Assert-True -Name "New-WorkflowTask propagates optional=true" `
+            -Condition ($taskJson.optional -eq $true) `
+            -Message "optional=true should be written to task JSON"
+
+        $mandatoryTask = @{ name = 'mandatory-step'; type = 'script'; script = 'scripts/bar.ps1' }
+        New-WorkflowTask -ProjectBotDir $manifestTmpDir -WorkflowName 'test-wf' -TaskDef $mandatoryTask | Out-Null
+        $written2 = Get-ChildItem -Path $manifestTasksDir -Filter "*.json" | Sort-Object LastWriteTime | Select-Object -Last 1
+        $taskJson2 = $written2 | Get-Content -Raw | ConvertFrom-Json
+        Assert-True -Name "New-WorkflowTask omits optional field when not set" `
+            -Condition (-not (Get-Member -InputObject $taskJson2 -Name 'optional' -MemberType NoteProperty)) `
+            -Message "optional should not be present in task JSON when not declared"
+    } catch {
+        Write-TestResult -Name "New-WorkflowTask optional propagation" -Status Fail -Message $_.Exception.Message
+    } finally {
+        if (Test-Path $manifestTmpDir) { Remove-Item $manifestTmpDir -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+} else {
+    Write-TestResult -Name "New-WorkflowTask optional propagation" -Status Skip -Message "workflow-manifest.ps1 not found"
+}
+
+# ═══════════════════════════════════════════════════════════════════
 # CLEANUP
 # ═══════════════════════════════════════════════════════════════════
 

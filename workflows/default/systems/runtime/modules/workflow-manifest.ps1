@@ -334,6 +334,7 @@ function New-WorkflowTask {
     if ($TaskDef['timeout'])                   { $task["timeout"] = [int]$TaskDef['timeout'] }
     if ($TaskDef['retry'])                     { $task["retry"] = [int]$TaskDef['retry'] }
     if ($TaskDef['on_failure'])                { $task["on_failure"] = $TaskDef['on_failure'] }
+    if ($null -ne $TaskDef['optional'])        { $task["optional"] = [bool]$TaskDef['optional'] }
     if ($TaskDef['condition'])                 { $task["condition"] = $TaskDef['condition'] }
     if ($TaskDef['outputs'])                   { $task["outputs"] = @($TaskDef['outputs']) }
     if ($TaskDef['env'])                       { $task["env"] = $TaskDef['env'] }
