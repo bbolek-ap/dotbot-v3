@@ -352,6 +352,8 @@ try
         return Results.File(stream, contentType, fileName);
     });
 
+    app.MapTestModeEndpoints();
+
     // ── Revoke a device token (API key protected) ───────────────────────────
     app.MapPost("/tokens/revoke", async (HttpRequest request, TokenStorageService tokenStorage, ILogger<Program> logger) =>
     {

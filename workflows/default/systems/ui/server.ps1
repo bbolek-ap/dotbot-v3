@@ -1708,7 +1708,7 @@ $docContext
                                     $content = @{ success = $false; error = "Process not found: $($body.process_id)" } | ConvertTo-Json -Compress
                                 } else {
                                     # Save any per-question attachment files and replace base64 with paths
-                                    $allowedAttachExtensions = @('.md', '.docx', '.xlsx', '.pdf', '.txt')
+                                    $allowedAttachExtensions = @('.md', '.docx', '.xlsx', '.pdf', '.txt', '.png', '.jpg', '.jpeg')
                                     $productDir = Join-Path $botRoot "workspace\product"
                                     $processedAnswers = @()
                                     foreach ($ans in @($body.answers)) {
