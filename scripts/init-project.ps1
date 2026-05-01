@@ -478,6 +478,14 @@ if ($Workflow) {
                 }
             }
 
+            if (-not (Test-ValidWorkflowDir -Dir $wfTargetDir)) {
+                Write-DotbotError "Source at '$wfSourceDir' has no usable workflow.yaml. Skipping '$displayName'; not registering as an installed workflow."
+                if (Test-Path $wfTargetDir) {
+                    Remove-Item -Path $wfTargetDir -Recurse -Force
+                }
+                continue
+            }
+
             # Parse manifest for env vars and MCP servers
             $manifest = Read-WorkflowManifest -WorkflowDir $wfTargetDir
 
