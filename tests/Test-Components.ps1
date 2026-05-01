@@ -4501,10 +4501,9 @@ if ((Test-Path $manifestModule) -and (Test-Path $frameworkIntegrityModule)) {
         & git config user.email "test@test.com" 2>$null
         & git config user.name "Test" 2>$null
 
-        # Create a .bot/ structure with two protected dirs and a protected file.
-        # Include the sentinel file (dotbot-mcp.ps1) at .bot/core/mcp/ that
-        # Test-FrameworkIntegrity uses to detect pre-first-commit state via git log.
-        $protectedPaths = @('.bot/core', '.bot/go.ps1')
+        # Fixture: dotbot-mcp.ps1 is the sentinel Test-FrameworkIntegrity probes
+        # for pre-first-commit detection; .bot/go.ps1 is the tampering target.
+        $protectedPaths = Get-FrameworkProtectedPaths
         New-Item -ItemType Directory -Path (Join-Path $fiTestDir ".bot/core/mcp") -Force | Out-Null
         Set-Content -Path (Join-Path $fiTestDir ".bot/core/mcp/dotbot-mcp.ps1") -Value "# mcp server" -Encoding UTF8
         Set-Content -Path (Join-Path $fiTestDir ".bot/go.ps1") -Value "# go" -Encoding UTF8

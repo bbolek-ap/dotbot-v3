@@ -1271,7 +1271,15 @@ if ($LASTEXITCODE -ne 0) {
     # then commit framework paths + manifest if anything actually changed.
     New-FrameworkManifest -Root $ProjectDir -Generator 'dotbot init --force' -Paths $frameworkPaths
 
-    $stagePaths = $frameworkPaths + @('.bot/.manifest.json')
+    # Keep paths that are on disk OR tracked in git. Drops stale list entries
+    # (would abort `git add` with a pathspec error), but preserves
+    # tracked-then-deleted paths so migration deletions still get staged.
+    $stagePaths = @(($frameworkPaths + @('.bot/.manifest.json')) | Where-Object {
+        $abs = Join-Path $ProjectDir $_
+        if (Test-Path -LiteralPath $abs) { return $true }
+        $tracked = git -C $ProjectDir ls-files -- $_ 2>$null
+        return [bool]$tracked
+    })
     $dirty = git -C $ProjectDir status --porcelain -- @stagePaths 2>$null
     if ($dirty) {
         Write-DotbotCommand "Committing framework file updates..."
