@@ -403,6 +403,9 @@ function New-WorkflowTask {
     if ($TaskDef['applicable_agents'])         { $task["applicable_agents"] = @($TaskDef['applicable_agents']) }
     if ($TaskDef['applicable_standards'])       { $task["applicable_standards"] = @($TaskDef['applicable_standards']) }
     if ($TaskDef['needs_interview'])            { $task["needs_interview"] = [bool]$TaskDef['needs_interview'] }
+    if ($TaskDef['needs_review'])              { $task["needs_review"] = [bool]$TaskDef['needs_review'] }
+    if ($TaskDef['needs_review_reason'])       { $task["needs_review_reason"] = $TaskDef['needs_review_reason'] }
+    $task["reviewer_feedback"] = @()
     if ($TaskDef['working_dir'])               { $task["working_dir"] = $TaskDef['working_dir'] }
     if ($TaskDef['human_hours'])               { $task["human_hours"] = $TaskDef['human_hours'] }
     if ($TaskDef['ai_hours'])                  { $task["ai_hours"] = $TaskDef['ai_hours'] }

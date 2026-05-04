@@ -1403,6 +1403,31 @@ $docContext
                     break
                 }
 
+                "/api/task/submit-review" {
+                    if ($method -eq "POST") {
+                        $contentType = "application/json; charset=utf-8"
+                        try {
+                            $reader = New-Object System.IO.StreamReader($request.InputStream)
+                            $body = $reader.ReadToEnd() | ConvertFrom-Json
+                            $reader.Close()
+                            $reviewArgs = @{
+                                TaskId   = $body.task_id
+                                Approved = [bool]$body.approved
+                            }
+                            if ($body.PSObject.Properties['comment'] -and $body.comment)            { $reviewArgs['Comment']       = $body.comment }
+                            if ($body.PSObject.Properties['what_was_wrong'] -and $body.what_was_wrong) { $reviewArgs['WhatWasWrong'] = $body.what_was_wrong }
+                            $content = Submit-TaskReview @reviewArgs | ConvertTo-Json -Depth 5 -Compress
+                        } catch {
+                            $statusCode = 500
+                            $content = @{ success = $false; error = "Failed to process review: $($_.Exception.Message)" } | ConvertTo-Json -Compress
+                        }
+                    } else {
+                        $statusCode = 405
+                        $content = @{ success = $false; error = "Method not allowed" } | ConvertTo-Json -Compress
+                    }
+                    break
+                }
+
                 "/api/task/ignore" {
                     if ($method -eq "POST") {
                         $contentType = "application/json; charset=utf-8"

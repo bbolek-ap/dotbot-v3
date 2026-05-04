@@ -1176,6 +1176,20 @@ try {
         $analysisPrompt = $analysisPrompt -replace '\{\{TASK_DESCRIPTION\}\}', $task.description
         $niValue = if ("$($task.needs_interview)" -eq 'true') { 'true' } else { 'false' }
         $analysisPrompt = $analysisPrompt -replace '\{\{NEEDS_INTERVIEW\}\}', $niValue
+        $nrValue = if ("$($task.needs_review)" -eq 'true') { 'true' } else { 'false' }
+        $analysisPrompt = $analysisPrompt -replace '\{\{NEEDS_REVIEW\}\}', $nrValue
+        # Reviewer feedback for analysis prompt (re-analysis after rejection)
+        $analysisFeedbackText = ""
+        if ($task.reviewer_feedback -and @($task.reviewer_feedback).Count -gt 0) {
+            $feedbackList = @($task.reviewer_feedback)
+            $analysisFeedbackText = "`n**Prior Reviewer Rejections ($($feedbackList.Count)):**`n"
+            $i = 1
+            foreach ($fb in $feedbackList) {
+                $analysisFeedbackText += "- Rejection #$i ($($fb.timestamp)): $($fb.comment) $(if ($fb.what_was_wrong) { "| Wrong: $($fb.what_was_wrong)" })`n"
+                $i++
+            }
+        }
+        $analysisPrompt = $analysisPrompt -replace '\{\{REVIEWER_FEEDBACK\}\}', $analysisFeedbackText
         $acceptanceCriteria = if ($task.acceptance_criteria) { ($task.acceptance_criteria | ForEach-Object { "- $_" }) -join "`n" } else { "No specific acceptance criteria defined." }
         $analysisPrompt = $analysisPrompt -replace '\{\{ACCEPTANCE_CRITERIA\}\}', $acceptanceCriteria
         $steps = if ($task.steps) { ($task.steps | ForEach-Object { "- $_" }) -join "`n" } else { "No specific steps defined." }

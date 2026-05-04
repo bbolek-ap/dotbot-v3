@@ -29,6 +29,7 @@ function Initialize-TaskAPI {
     # (dot-sourcing inside a function scopes the definitions to that function only)
     $script:TaskAnswerQuestionScript = "$BotRoot/core/mcp/tools/task-answer-question/script.ps1"
     $script:TaskApproveSplitScript = "$BotRoot/core/mcp/tools/task-approve-split/script.ps1"
+    $script:TaskSubmitReviewScript = "$BotRoot/core/mcp/tools/task-submit-review/script.ps1"
     $script:TaskMutationModulePath = "$BotRoot/core/mcp/modules/TaskMutation.psm1"
 }
 
@@ -326,6 +327,27 @@ function Get-ActionRequired {
         }
     }
 
+    # Get needs-review tasks (human approval required)
+    $needsReviewDir = Join-Path $tasksDir "needs-review"
+    if (Test-Path $needsReviewDir) {
+        $files = Get-ChildItem -Path $needsReviewDir -Filter "*.json" -ErrorAction SilentlyContinue
+        foreach ($file in $files) {
+            try {
+                $task = Get-Content $file.FullName -Raw | ConvertFrom-Json
+                $actionItems += @{
+                    type               = "review"
+                    task_id            = $task.id
+                    task_name          = $task.name
+                    needs_review_reason = if ($task.PSObject.Properties['needs_review_reason']) { $task.needs_review_reason } else { $null }
+                    reviewer_feedback  = if ($task.PSObject.Properties['reviewer_feedback']) { $task.reviewer_feedback } else { @() }
+                    commit_sha         = if ($task.PSObject.Properties['pending_review_commit']) { $task.pending_review_commit } else { $null }
+                    review_requested_at = if ($task.PSObject.Properties['review_requested_at']) { $task.review_requested_at } else { $task.updated_at }
+                    created_at         = $task.updated_at
+                }
+            } catch { Write-BotLog -Level Warn -Message "Task operation failed" -Exception $_ }
+        }
+    }
+
     # Scan processes for workflow-launch interview questions (needs-input status)
     $processesDir = Join-Path $botRoot ".control\processes"
     if (Test-Path $processesDir) {
@@ -600,6 +622,29 @@ function Get-DeletedRoadmapTasks {
     }
 }
 
+function Submit-TaskReview {
+    param(
+        [Parameter(Mandatory)] [string]$TaskId,
+        [Parameter(Mandatory)] [bool]$Approved,
+        [string]$Comment,
+        [string]$WhatWasWrong
+    )
+
+    . $script:TaskSubmitReviewScript
+    $args = @{
+        task_id  = $TaskId
+        approved = $Approved
+    }
+    if ($Comment)      { $args['comment']        = $Comment }
+    if ($WhatWasWrong) { $args['what_was_wrong'] = $WhatWasWrong }
+
+    $result = Invoke-TaskSubmitReview -Arguments $args
+
+    $action = if ($Approved) { "Approved" } else { "Rejected" }
+    Write-Status "$action review for task: $TaskId" -Type Success
+    return $result
+}
+
 function Restore-RoadmapTaskVersion {
     param(
         [Parameter(Mandatory)] [string]$TaskId,
@@ -618,6 +663,7 @@ Export-ModuleMember -Function @(
     'Get-ActionRequired',
     'Submit-TaskAnswer',
     'Submit-SplitApproval',
+    'Submit-TaskReview',
     'Start-TaskCreation',
     'Set-RoadmapTaskIgnore',
     'Update-RoadmapTask',

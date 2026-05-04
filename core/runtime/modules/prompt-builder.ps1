@@ -131,6 +131,26 @@ function Build-TaskPrompt {
     # Replace standards list
     $prompt = $prompt -replace '\{\{STANDARDS_LIST\}\}', $StandardsList
 
+    # Format needs_review flag
+    $needsReviewValue = if ("$($Task.needs_review)" -eq 'true') { 'true' } else { 'false' }
+    $prompt = $prompt -replace '\{\{NEEDS_REVIEW\}\}', $needsReviewValue
+
+    # Format reviewer feedback history
+    $reviewerFeedbackText = ""
+    if ($Task.reviewer_feedback -and @($Task.reviewer_feedback).Count -gt 0) {
+        $feedbackList = @($Task.reviewer_feedback)
+        $reviewerFeedbackText = "## Prior Reviewer Feedback`n`nThis task has been rejected $($feedbackList.Count) time(s). You MUST address ALL of the following feedback in your implementation:`n`n"
+        $i = 1
+        foreach ($fb in $feedbackList) {
+            $reviewerFeedbackText += "### Rejection #$i ($($fb.timestamp))`n"
+            if ($fb.comment) { $reviewerFeedbackText += "**Comment:** $($fb.comment)`n" }
+            if ($fb.what_was_wrong) { $reviewerFeedbackText += "**What was wrong:** $($fb.what_was_wrong)`n" }
+            $reviewerFeedbackText += "`n"
+            $i++
+        }
+    }
+    $prompt = $prompt -replace '\{\{REVIEWER_FEEDBACK\}\}', $reviewerFeedbackText
+
     # Format and replace questions resolved (user decisions from analysis Q&A)
     $questionsResolved = ""
     if ($Task.questions_resolved -and $Task.questions_resolved.Count -gt 0) {
